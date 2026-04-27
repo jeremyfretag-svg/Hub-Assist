@@ -317,3 +317,283 @@ fn test_claim_rewards_transfers_and_updates_claimed() {
     let stake_info = t.client().get_stake(&staker);
     assert_eq!(stake_info.claimed_rewards, 1_000);
 }
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Subscription module tests
+// ══════════════════════════════════════════════════════════════════════════════
+
+use crate::subscription::{SubscriptionModule, SubscriptionModuleClient};
+use common_types::{SubscriptionStatus, SubscriptionTier, TierLevel};
+use soroban_sdk::Vec as SorobanVec;
+
+const BILLING_CYCLE: u64 = 30 * 24 * 3600; // 30 days
+const TIER_PRICE: i128 = 1_000;
+
+struct SubTestEnv {
+    env: Env,
+    contract_id: Address,
+    token_id: Address,
+    tier_id: BytesN<32>,
+}
+
+impl SubTestEnv {
+    fn new() -> Self {
+        let env = Env::default();
+        env.mock_all_auths();
+        env.ledger().with_mut(|li| li.timestamp = 1_000);
+
+        let token_admin = Address::generate(&env);
+        let sac = env.register_stellar_asset_contract_v2(token_admin.clone());
+        let token_id = sac.address();
+
+        let contract_id = env.register_contract(None, SubscriptionModule);
+
+        let tier_id = BytesN::from_array(&env, &[1u8; 32]);
+        let tier = SubscriptionTier {
+            id: tier_id.clone(),
+            name: String::from_str(&env, "Basic"),
+            level: TierLevel::Basic,
+            price: TIER_PRICE,
+            duration_days: 30,
+            features: SorobanVec::new(&env),
+            is_active: true,
+            max_members: 100,
+        };
+        SubscriptionModuleClient::new(&env, &contract_id).set_tier(&tier_id, &tier);
+
+        SubTestEnv { env, contract_id, token_id, tier_id }
+    }
+
+    fn client(&self) -> SubscriptionModuleClient {
+        SubscriptionModuleClient::new(&self.env, &self.contract_id)
+    }
+
+    fn mint(&self, to: &Address, amount: i128) {
+        token::StellarAssetClient::new(&self.env, &self.token_id).mint(to, &amount);
+    }
+
+    fn token(&self) -> token::Client {
+        token::Client::new(&self.env, &self.token_id)
+    }
+
+    /// Create a subscription for `user` with exact tier price.
+    fn create_sub(&self, user: &Address) {
+        self.mint(user, TIER_PRICE);
+        self.client().create_subscription(
+            user,
+            &self.token_id,
+            &TIER_PRICE,
+            &self.tier_id,
+            &BILLING_CYCLE,
+        );
+    }
+}
+
+// ── create_subscription ───────────────────────────────────────────────────────
+
+#[test]
+fn test_create_subscription_success_transfers_usdc() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.mint(&user, TIER_PRICE);
+
+    let sub = t.client().create_subscription(
+        &user,
+        &t.token_id,
+        &TIER_PRICE,
+        &t.tier_id,
+        &BILLING_CYCLE,
+    );
+
+    // USDC transferred to contract
+    assert_eq!(t.token().balance(&user), 0);
+    assert_eq!(t.token().balance(&t.contract_id), TIER_PRICE);
+
+    // Subscription fields
+    assert_eq!(sub.status, SubscriptionStatus::Active);
+    assert_eq!(sub.amount, TIER_PRICE);
+    assert_eq!(sub.billing_cycle, BILLING_CYCLE);
+    assert_eq!(sub.expires_at, 1_000 + BILLING_CYCLE);
+    assert_eq!(sub.pause_count, 0);
+}
+
+#[test]
+#[should_panic(expected = "payment amount below tier price")]
+fn test_create_subscription_invalid_amount_returns_error() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.mint(&user, TIER_PRICE - 1);
+
+    t.client().create_subscription(
+        &user,
+        &t.token_id,
+        &(TIER_PRICE - 1),
+        &t.tier_id,
+        &BILLING_CYCLE,
+    );
+}
+
+#[test]
+fn test_create_subscription_already_exists_overwrites() {
+    // The contract does not guard against duplicate subscriptions — a second
+    // create_subscription call for the same user overwrites the stored record.
+    // Both payments are transferred. This test documents that behaviour.
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.mint(&user, TIER_PRICE * 2);
+
+    t.client().create_subscription(&user, &t.token_id, &TIER_PRICE, &t.tier_id, &BILLING_CYCLE);
+    t.client().create_subscription(&user, &t.token_id, &TIER_PRICE, &t.tier_id, &BILLING_CYCLE);
+
+    // Both payments transferred to contract
+    assert_eq!(t.token().balance(&user), 0);
+    assert_eq!(t.token().balance(&t.contract_id), TIER_PRICE * 2);
+
+    // Stored record is the second subscription (overwritten), still Active
+    let sub = t.client().get_subscription(&user);
+    assert_eq!(sub.status, SubscriptionStatus::Active);
+}
+
+// ── pause_subscription ────────────────────────────────────────────────────────
+
+#[test]
+fn test_pause_subscription_success() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    t.client().pause_subscription(&user, &String::from_str(&t.env, "vacation"));
+
+    let sub = t.client().get_subscription(&user);
+    assert_eq!(sub.status, SubscriptionStatus::Paused);
+    assert_eq!(sub.pause_count, 1);
+    assert_eq!(sub.paused_at, 1_000);
+}
+
+#[test]
+#[should_panic(expected = "max pauses reached")]
+fn test_pause_subscription_max_pause_count_exceeded() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    let reason = String::from_str(&t.env, "r");
+    let interval = 7 * 24 * 3600u64; // MIN_PAUSE_INTERVAL
+
+    // Pause 3 times (MAX_PAUSES = 3), resuming between each.
+    for i in 0..3u64 {
+        t.env.ledger().with_mut(|li| li.timestamp = 1_000 + i * (interval + 1));
+        t.client().pause_subscription(&user, &reason);
+        t.env.ledger().with_mut(|li| li.timestamp = 1_000 + i * (interval + 1) + 1);
+        t.client().resume_subscription(&user);
+    }
+
+    // 4th pause should fail
+    t.env.ledger().with_mut(|li| li.timestamp = 1_000 + 3 * (interval + 1));
+    t.client().pause_subscription(&user, &reason);
+}
+
+#[test]
+#[should_panic(expected = "min interval between pauses not met")]
+fn test_pause_subscription_too_early_to_pause() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    let reason = String::from_str(&t.env, "r");
+    t.client().pause_subscription(&user, &reason);
+    // resume immediately
+    t.client().resume_subscription(&user);
+    // try to pause again before MIN_PAUSE_INTERVAL (7 days) has elapsed
+    t.client().pause_subscription(&user, &reason);
+}
+
+// ── resume_subscription ───────────────────────────────────────────────────────
+
+#[test]
+fn test_resume_subscription_success_extends_expiry() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    t.client().pause_subscription(&user, &String::from_str(&t.env, "r"));
+
+    // Advance 1 day while paused
+    let pause_duration = 86_400u64;
+    t.env.ledger().with_mut(|li| li.timestamp = 1_000 + pause_duration);
+    t.client().resume_subscription(&user);
+
+    let sub = t.client().get_subscription(&user);
+    assert_eq!(sub.status, SubscriptionStatus::Active);
+    assert_eq!(sub.paused_at, 0);
+    // expiry extended by pause_duration
+    assert_eq!(sub.expires_at, 1_000 + BILLING_CYCLE + pause_duration);
+}
+
+#[test]
+#[should_panic(expected = "subscription is not paused")]
+fn test_resume_subscription_not_paused_returns_error() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+    // Active, not paused — should panic
+    t.client().resume_subscription(&user);
+}
+
+// ── cancel_subscription ───────────────────────────────────────────────────────
+
+#[test]
+fn test_cancel_subscription_success() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    t.client().cancel_subscription(&user);
+
+    let sub = t.client().get_subscription(&user);
+    assert_eq!(sub.status, SubscriptionStatus::Cancelled);
+}
+
+#[test]
+#[should_panic(expected = "subscription not cancellable")]
+fn test_cancel_subscription_already_cancelled_returns_error() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    t.client().cancel_subscription(&user);
+    // Second cancel should panic
+    t.client().cancel_subscription(&user);
+}
+
+// ── renew_subscription ────────────────────────────────────────────────────────
+
+#[test]
+fn test_renew_subscription_extends_expiry_by_billing_cycle() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    let before = t.client().get_subscription(&user);
+    let expected_expiry = before.expires_at + BILLING_CYCLE;
+
+    // Fund user for renewal payment
+    t.mint(&user, TIER_PRICE);
+    t.client().renew_subscription(&user);
+
+    let after = t.client().get_subscription(&user);
+    assert_eq!(after.expires_at, expected_expiry);
+    assert_eq!(after.status, SubscriptionStatus::Active);
+}
+
+#[test]
+#[should_panic(expected = "cannot renew cancelled subscription")]
+fn test_renew_cancelled_subscription_returns_error() {
+    let t = SubTestEnv::new();
+    let user = Address::generate(&t.env);
+    t.create_sub(&user);
+
+    t.client().cancel_subscription(&user);
+    t.mint(&user, TIER_PRICE);
+    t.client().renew_subscription(&user);
+}
