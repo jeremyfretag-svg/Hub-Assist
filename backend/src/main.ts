@@ -27,6 +27,12 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization'],
   });
 
+  // Global validation pipe
+  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+
+  // Global exception filter
+  app.useGlobalFilters(new HttpExceptionFilter());
+
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('HubAssist API')
