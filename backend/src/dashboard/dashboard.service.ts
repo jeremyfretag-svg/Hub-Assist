@@ -16,7 +16,7 @@ export class DashboardService {
   async getStats() {
     const totalMembers = await this.userRepo.count();
     const verifiedMembers = await this.userRepo.count({
-      where: { role: UserRole.MEMBER },
+      where: { isVerified: true },
     });
     const activeWorkspaces = await this.workspaceRepo.count({
       where: { isActive: true, deletedAt: null as any },
@@ -31,7 +31,7 @@ export class DashboardService {
       totalMembers,
       verifiedMembers,
       activeWorkspaces,
-      deskOccupancy: Math.round(deskOccupancy),
+      deskOccupancy: Math.min(100, Math.round(deskOccupancy)),
     };
   }
 
