@@ -25,19 +25,15 @@ export class BookingsService {
     const endTime = new Date(dto.endTime);
 
     // Validate no overlapping bookings with confirmed status
-    const overlapping = await this.repo.findOne({
-      where: {
-        workspaceId: dto.workspaceId,
-        status: BookingStatus.CONFIRMED,
-      },
-    });
+    const overlapping = await this.repo
+      .createQueryBuilder('booking')
+      .where('booking.workspaceId = :workspaceId', { workspaceId: dto.workspaceId })
+      .andWhere('booking.status = :status', { status: BookingStatus.CONFIRMED })
+      .andWhere('booking.startTime < :endTime AND booking.endTime > :startTime', { startTime, endTime })
+      .getOne();
 
     if (overlapping) {
-      const overlap =
-        startTime < new Date(overlapping.endTime) && endTime > new Date(overlapping.startTime);
-      if (overlap) {
-        throw new ConflictException('Workspace has overlapping bookings');
-      }
+      throw new ConflictException('Workspace has overlapping bookings');
     }
 
     const booking = this.repo.create({
