@@ -11,11 +11,23 @@ export class User {
   @PrimaryGeneratedColumn('uuid')
   id!: string;
 
+  @Column({ nullable: true })
+  firstName?: string;
+
+  @Column({ nullable: true })
+  lastName?: string;
+
   @Column({ unique: true })
   email!: string;
 
   @Column()
   passwordHash!: string;
+
+  @Column({ nullable: true })
+  firstName?: string;
+
+  @Column({ nullable: true })
+  lastName?: string;
 
   @Column({ type: 'enum', enum: UserRole, default: UserRole.MEMBER })
   role!: UserRole;
@@ -32,6 +44,9 @@ export class User {
 
    @Column({ default: false })
    isVerified: boolean;
+
+   @Column({ default: true })
+   isActive: boolean;
 
    @Column({ nullable: true })
    profilePicture?: string;

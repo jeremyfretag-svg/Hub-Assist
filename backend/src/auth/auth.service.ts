@@ -45,7 +45,7 @@ export class AuthService {
     return regex.test(password);
   }
 
-  async register(email: string, password: string) {
+  async register(email: string, password: string, firstName?: string, lastName?: string) {
     const passwordHash = await bcrypt.hash(password, 10);
     const otp = this.generateOtp();
     const otpHash = await this.hashOtp(otp);
@@ -56,6 +56,8 @@ export class AuthService {
       passwordHash,
       otp: otpHash,
       otpExpiry,
+      firstName,
+      lastName,
     });
 
     // Send OTP email (non-blocking)

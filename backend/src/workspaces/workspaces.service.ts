@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository } from 'typeorm';
+import { IsNull, Repository } from 'typeorm';
 import { Workspace, WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 
@@ -38,7 +38,7 @@ export class WorkspacesService {
 
   async findById(id: string) {
     const workspace = await this.repo.findOne({
-      where: { id, deletedAt: null as any },
+      where: { id, deletedAt: IsNull() },
     });
     if (!workspace) {
       throw new NotFoundException('Workspace not found');

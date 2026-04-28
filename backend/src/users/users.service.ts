@@ -11,6 +11,7 @@ import { UploadProfilePictureProvider } from './providers/upload-profile-picture
 import { ValidateUserProvider } from './providers/validate-user.provider';
 import { ForgotPasswordProvider } from './providers/forgot-password.provider';
 import { ResetPasswordProvider } from './providers/reset-password.provider';
+import { ChangePasswordProvider } from './providers/change-password.provider';
 import { User } from './user.entity';
 
 @Injectable()
@@ -28,6 +29,7 @@ export class UsersService {
     private validateUserProvider: ValidateUserProvider,
     private forgotPasswordProvider: ForgotPasswordProvider,
     private resetPasswordProvider: ResetPasswordProvider,
+    private changePasswordProvider: ChangePasswordProvider,
   ) {}
 
   create(data: Partial<User>) {
@@ -76,5 +78,9 @@ export class UsersService {
 
   resetPassword(id: string, newPassword: string) {
     return this.resetPasswordProvider.execute(id, newPassword);
+  }
+
+  changePassword(id: string, currentPassword: string, newPassword: string) {
+    return this.changePasswordProvider.execute(id, currentPassword, newPassword);
   }
 }
