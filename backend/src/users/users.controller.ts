@@ -87,6 +87,22 @@ export class UsersController {
     return this.usersService.delete(id);
   }
 
+  @Patch(':id/activate')
+  @ApiOperation({ summary: 'Activate user' })
+  @ApiParam({ name: 'id', type: String, description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User activated successfully' })
+  activate(@Param('id') id: string) {
+    return this.usersService.update(id, { isActive: true });
+  }
+
+  @Patch(':id/deactivate')
+  @ApiOperation({ summary: 'Deactivate user' })
+  @ApiParam({ name: 'id', type: String, description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User deactivated successfully' })
+  deactivate(@Param('id') id: string) {
+    return this.usersService.update(id, { isActive: false });
+  }
+
   @Post(':id/profile-picture')
   @UseInterceptors(FileInterceptor('file'))
   @ApiOperation({ summary: 'Upload profile picture' })
