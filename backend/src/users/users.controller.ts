@@ -75,6 +75,15 @@ export class UsersController {
     return this.usersService.update(id, data);
   }
 
+  @Patch(':id/role')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({ summary: 'Update user role (admin only)' })
+  @ApiParam({ name: 'id', type: String, description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User role updated successfully' })
+  updateRole(@Param('id') id: string, @Body('role') role: UserRole) {
+    return this.usersService.update(id, { role });
+  }
+
   @Delete(':id')
   @ApiOperation({ summary: 'Delete user (soft delete)' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
