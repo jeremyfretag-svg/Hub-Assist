@@ -5,7 +5,6 @@ import {
   CreateDateColumn,
   UpdateDateColumn,
   ManyToOne,
-  ForeignKey,
   JoinColumn,
 } from 'typeorm';
 import { Workspace } from '../workspaces/workspace.entity';
@@ -24,7 +23,6 @@ export class Booking {
   id!: string;
 
   @Column()
-  @ForeignKey(() => Workspace)
   workspaceId!: string;
 
   @ManyToOne(() => Workspace)
@@ -32,7 +30,6 @@ export class Booking {
   workspace!: Workspace;
 
   @Column()
-  @ForeignKey(() => User)
   userId!: string;
 
   @ManyToOne(() => User)
