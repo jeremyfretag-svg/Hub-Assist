@@ -10,6 +10,7 @@ import {
   Query,
   UseGuards,
   UseInterceptors,
+  Req,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -59,6 +60,13 @@ export class UsersController {
     return { users, total };
   }
 
+  @Post('change-password')
+  @ApiOperation({ summary: 'Change own password' })
+  @ApiResponse({ status: 200, description: 'Password changed successfully' })
+  changePassword(@Req() req: any, @Body() body: { currentPassword: string; newPassword: string }) {
+    return this.usersService.changePassword(req.user.sub, body.currentPassword, body.newPassword);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
@@ -90,6 +98,22 @@ export class UsersController {
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
   delete(@Param('id') id: string) {
     return this.usersService.delete(id);
+  }
+
+  @Patch(':id/activate')
+  @ApiOperation({ summary: 'Activate user' })
+  @ApiParam({ name: 'id', type: String, description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User activated successfully' })
+  activate(@Param('id') id: string) {
+    return this.usersService.update(id, { isActive: true });
+  }
+
+  @Patch(':id/deactivate')
+  @ApiOperation({ summary: 'Deactivate user' })
+  @ApiParam({ name: 'id', type: String, description: 'User ID' })
+  @ApiResponse({ status: 200, description: 'User deactivated successfully' })
+  deactivate(@Param('id') id: string) {
+    return this.usersService.update(id, { isActive: false });
   }
 
   @Post(':id/profile-picture')

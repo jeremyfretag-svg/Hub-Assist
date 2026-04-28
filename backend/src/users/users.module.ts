@@ -16,6 +16,7 @@ import { UploadProfilePictureProvider } from './providers/upload-profile-picture
 import { ValidateUserProvider } from './providers/validate-user.provider';
 import { ForgotPasswordProvider } from './providers/forgot-password.provider';
 import { ResetPasswordProvider } from './providers/reset-password.provider';
+import { ChangePasswordProvider } from './providers/change-password.provider';
 
 @Module({
   imports: [TypeOrmModule.forFeature([User]), CloudinaryModule],
@@ -33,6 +34,7 @@ import { ResetPasswordProvider } from './providers/reset-password.provider';
     ValidateUserProvider,
     ForgotPasswordProvider,
     ResetPasswordProvider,
+    ChangePasswordProvider,
   ],
   controllers: [UsersController],
   exports: [UsersService],
