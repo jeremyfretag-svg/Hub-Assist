@@ -22,6 +22,7 @@
     "@nestjs/passport": "^10.0.0",
     "@nestjs/platform-express": "^10.0.0",
     "@nestjs/swagger": "^7.1.0",
+    "@nestjs/terminus": "^10.3.0",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/typeorm": "^10.0.0",
     "@simplewebauthn/server": "^13.3.0",
@@ -35,13 +36,15 @@
     "compression": "^1.8.1",
     "helmet": "^8.1.0",
     "joi": "^18.1.2",
+    "nest-winston": "^1.10.2",
     "nodemailer": "^8.0.7",
     "passport-jwt": "^4.0.1",
     "pg": "^8.11.0",
     "reflect-metadata": "^0.1.13",
     "rxjs": "^7.8.0",
     "typeorm": "^0.3.17",
-    "uuid": "^10.0.0"
+    "uuid": "^10.0.0",
+    "winston": "^3.19.0"
   },
   "devDependencies": {
     "@nestjs/cli": "^10.0.0",

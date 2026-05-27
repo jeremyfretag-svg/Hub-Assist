@@ -178,18 +178,36 @@ Security headers (HSTS, CSP, X-Frame-Options, etc.) are applied via [helmet](htt
 
 ## Running the Project
 
-**Backend (NestJS):**
+**Run everything from the root (recommended):**
 ```bash
-cd backend
-npm run start:dev
-# API available at http://localhost:3001
+# Install all workspace dependencies
+npm run install:all
+
+# Start frontend + backend concurrently
+npm run dev
+
+# Build both
+npm run build
+
+# Lint both
+npm run lint
+
+# Test both
+npm run test
 ```
 
-**Frontend (Next.js):**
+**Or run individually:**
+
 ```bash
-cd frontend
-npm run dev
-# App available at http://localhost:3000
+cd backend && npm run start:dev   # API at http://localhost:3001
+cd frontend && npm run dev        # App at http://localhost:3000
+```
+
+### Health Check
+
+```
+GET /api/health           → { status, timestamp, uptime, database }
+GET /api/health/detailed  → DB pool stats, memory, version (admin only)
 ```
 
 ---
