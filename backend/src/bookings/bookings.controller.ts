@@ -25,7 +25,7 @@ import { CreateBookingDto, UpdateBookingDto } from './bookings.dto';
 
 @ApiTags('bookings')
 @ApiBearerAuth('bearer')
-@Controller('bookings')
+@Controller({ version: '1', path: 'bookings' })
 export class BookingsController {
   constructor(private service: BookingsService) {}
 

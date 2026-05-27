@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe, UnauthorizedException } from '@nestjs/common';
+import { INestApplication, ValidationPipe, UnauthorizedException, VersioningType } from '@nestjs/common';
 import request from 'supertest';
 import { JwtModule, JwtService } from '@nestjs/jwt';
 import { PassportModule } from '@nestjs/passport';
@@ -45,7 +45,11 @@ describe('Auth (e2e)', () => {
 
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     jwtService = module.get(JwtService);
@@ -55,25 +59,28 @@ describe('Auth (e2e)', () => {
 
   beforeEach(() => jest.clearAllMocks());
 
-  // ── POST /api/auth/register ────────────────────────────────────────────────
+  // ── POST /api/v1/auth/register ────────────────────────────────────────────────
 
-  describe('POST /api/auth/register', () => {
+  describe('POST /api/v1/auth/register', () => {
     it('201 – creates user and returns message', async () => {
       mockAuthService.register.mockResolvedValue({
         message: 'User registered. Check your email for OTP.',
       });
 
       return request(app.getHttpServer())
-        .post('/api/auth/register')
+        .post('/api/v1/auth/register')
         .send({ email: 'newuser@test.com', password: 'SecurePass123' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBeDefined());
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBeDefined();
+        });
     });
   });
 
-  // ── POST /api/auth/login ───────────────────────────────────────────────────
+  // ── POST /api/v1/auth/login ───────────────────────────────────────────────────
 
-  describe('POST /api/auth/login', () => {
+  describe('POST /api/v1/auth/login', () => {
     it('201 – returns access and refresh tokens', async () => {
       mockAuthService.login.mockResolvedValue({
         access_token: 'access-jwt',
@@ -81,12 +88,13 @@ describe('Auth (e2e)', () => {
       });
 
       return request(app.getHttpServer())
-        .post('/api/auth/login')
+        .post('/api/v1/auth/login')
         .send({ email: 'user@test.com', password: 'SecurePass123' })
         .expect(201)
         .expect((res) => {
-          expect(res.body.access_token).toBeDefined();
-          expect(res.body.refresh_token).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.access_token).toBeDefined();
+          expect(res.body.data.refresh_token).toBeDefined();
         });
     });
 
@@ -94,29 +102,32 @@ describe('Auth (e2e)', () => {
       mockAuthService.login.mockRejectedValue(new UnauthorizedException('Invalid credentials'));
 
       return request(app.getHttpServer())
-        .post('/api/auth/login')
+        .post('/api/v1/auth/login')
         .send({ email: 'user@test.com', password: 'WrongPass' })
         .expect(401);
     });
   });
 
-  // ── POST /api/auth/verify-otp ──────────────────────────────────────────────
+  // ── POST /api/v1/auth/verify-otp ──────────────────────────────────────────────
 
-  describe('POST /api/auth/verify-otp', () => {
+  describe('POST /api/v1/auth/verify-otp', () => {
     it('201 – verifies account with valid OTP', async () => {
       mockAuthService.verifyOtp.mockResolvedValue({ message: 'Email verified successfully' });
 
       return request(app.getHttpServer())
-        .post('/api/auth/verify-otp')
+        .post('/api/v1/auth/verify-otp')
         .send({ email: 'user@test.com', otp: '123456' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Email verified successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Email verified successfully');
+        });
     });
   });
 
-  // ── POST /api/auth/refresh ─────────────────────────────────────────────────
+  // ── POST /api/v1/auth/refresh ─────────────────────────────────────────────────
 
-  describe('POST /api/auth/refresh', () => {
+  describe('POST /api/v1/auth/refresh', () => {
     it('201 – rotates tokens with valid refresh token', async () => {
       mockAuthService.refresh.mockResolvedValue({
         access_token: 'new-access-jwt',
@@ -124,12 +135,13 @@ describe('Auth (e2e)', () => {
       });
 
       return request(app.getHttpServer())
-        .post('/api/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .send({ refreshToken: 'valid-refresh-token' })
         .expect(201)
         .expect((res) => {
-          expect(res.body.access_token).toBeDefined();
-          expect(res.body.refresh_token).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.access_token).toBeDefined();
+          expect(res.body.data.refresh_token).toBeDefined();
         });
     });
 
@@ -139,39 +151,45 @@ describe('Auth (e2e)', () => {
       );
 
       return request(app.getHttpServer())
-        .post('/api/auth/refresh')
+        .post('/api/v1/auth/refresh')
         .send({ refreshToken: 'invalid-token' })
         .expect(401);
     });
   });
 
-  // ── POST /api/auth/forgot-password ────────────────────────────────────────
+  // ── POST /api/v1/auth/forgot-password ────────────────────────────────────────
 
-  describe('POST /api/auth/forgot-password', () => {
+  describe('POST /api/v1/auth/forgot-password', () => {
     it('201 – sends reset OTP for existing email', async () => {
       mockAuthService.forgotPassword.mockResolvedValue({
         message: 'Password reset OTP sent to your email',
       });
 
       return request(app.getHttpServer())
-        .post('/api/auth/forgot-password')
+        .post('/api/v1/auth/forgot-password')
         .send({ email: 'user@test.com' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBeDefined());
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBeDefined();
+        });
     });
   });
 
-  // ── POST /api/auth/reset-password ─────────────────────────────────────────
+  // ── POST /api/v1/auth/reset-password ─────────────────────────────────────────
 
-  describe('POST /api/auth/reset-password', () => {
+  describe('POST /api/v1/auth/reset-password', () => {
     it('201 – resets password with valid OTP', async () => {
       mockAuthService.resetPassword.mockResolvedValue({ message: 'Password reset successfully' });
 
       return request(app.getHttpServer())
-        .post('/api/auth/reset-password')
+        .post('/api/v1/auth/reset-password')
         .send({ email: 'user@test.com', otp: '123456', newPassword: 'NewSecurePass123' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Password reset successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Password reset successfully');
+        });
     });
 
     it('401 – invalid OTP returns unauthorized', async () => {
@@ -180,26 +198,29 @@ describe('Auth (e2e)', () => {
       );
 
       return request(app.getHttpServer())
-        .post('/api/auth/reset-password')
+        .post('/api/v1/auth/reset-password')
         .send({ email: 'user@test.com', otp: '000000', newPassword: 'NewSecurePass123' })
         .expect(401);
     });
   });
 
-  // ── POST /api/auth/logout ──────────────────────────────────────────────────
+  // ── POST /api/v1/auth/logout ──────────────────────────────────────────────────
 
-  describe('POST /api/auth/logout', () => {
+  describe('POST /api/v1/auth/logout', () => {
     it('201 – revokes token for authenticated user', async () => {
       mockAuthService.logout.mockResolvedValue({ message: 'Logged out successfully' });
 
       return request(app.getHttpServer())
-        .post('/api/auth/logout')
+        .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${makeToken()}`)
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Logged out successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Logged out successfully');
+        });
     });
 
     it('401 – unauthenticated request is rejected', () =>
-      request(app.getHttpServer()).post('/api/auth/logout').expect(401));
+      request(app.getHttpServer()).post('/api/v1/auth/logout').expect(401));
   });
 });

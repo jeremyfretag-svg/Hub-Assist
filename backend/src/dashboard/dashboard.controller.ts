@@ -6,7 +6,7 @@ import { DashboardService } from './dashboard.service';
 
 @ApiTags('dashboard')
 @ApiBearerAuth('bearer')
-@Controller('dashboard')
+@Controller({ version: '1', path: 'dashboard' })
 export class DashboardController {
   constructor(private service: DashboardService) {}
 

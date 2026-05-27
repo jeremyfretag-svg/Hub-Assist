@@ -22,7 +22,7 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { Request } from 'express';
 
 @ApiTags('contact')
-@Controller('contact')
+@Controller({ version: '1', path: 'contact' })
 export class ContactController {
   constructor(private readonly contactService: ContactService) {}
 

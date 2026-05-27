@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import * as request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
 import { getRepositoryToken } from '@nestjs/typeorm';
@@ -69,7 +69,11 @@ describe('Workspaces (e2e)', () => {
 
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     jwtService = module.get(JwtService);
@@ -77,9 +81,9 @@ describe('Workspaces (e2e)', () => {
 
   afterAll(() => app.close());
 
-  // ── POST /api/workspaces ───────────────────────────────────────────────────
+  // ── POST /api/v1/workspaces ───────────────────────────────────────────────────
 
-  describe('POST /api/workspaces', () => {
+  describe('POST /api/v1/workspaces', () => {
     const payload = {
       name: 'Hot Desk A',
       type: WorkspaceType.HOT_DESK,
@@ -90,78 +94,82 @@ describe('Workspaces (e2e)', () => {
 
     it('201 – authenticated user creates workspace', () =>
       request(app.getHttpServer())
-        .post('/api/workspaces')
+        .post('/api/v1/workspaces')
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .send(payload)
         .expect(201));
 
     it('401 – unauthenticated request is rejected', () =>
-      request(app.getHttpServer()).post('/api/workspaces').send(payload).expect(401));
+      request(app.getHttpServer()).post('/api/v1/workspaces').send(payload).expect(401));
   });
 
-  // ── GET /api/workspaces ────────────────────────────────────────────────────
+  // ── GET /api/v1/workspaces ────────────────────────────────────────────────────
 
-  describe('GET /api/workspaces', () => {
+  describe('GET /api/v1/workspaces', () => {
     it('200 – returns paginated list', () =>
       request(app.getHttpServer())
-        .get('/api/workspaces')
+        .get('/api/v1/workspaces')
         .expect(200)
         .expect((res) => {
-          expect(res.body.data).toBeInstanceOf(Array);
-          expect(res.body.total).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.data).toBeInstanceOf(Array);
+          expect(res.body.data.total).toBeDefined();
         }));
 
     it('200 – supports page and limit query params', () =>
       request(app.getHttpServer())
-        .get('/api/workspaces?page=1&limit=5')
+        .get('/api/v1/workspaces?page=1&limit=5')
         .expect(200));
 
     it('200 – supports type filter', () =>
       request(app.getHttpServer())
-        .get(`/api/workspaces?type=${WorkspaceType.HOT_DESK}`)
+        .get(`/api/v1/workspaces?type=${WorkspaceType.HOT_DESK}`)
         .expect(200));
   });
 
-  // ── GET /api/workspaces/:id ────────────────────────────────────────────────
+  // ── GET /api/v1/workspaces/:id ────────────────────────────────────────────────
 
-  describe('GET /api/workspaces/:id', () => {
+  describe('GET /api/v1/workspaces/:id', () => {
     it('200 – returns workspace details', () =>
       request(app.getHttpServer())
-        .get('/api/workspaces/ws-uuid-1')
+        .get('/api/v1/workspaces/ws-uuid-1')
         .expect(200)
-        .expect((res) => expect(res.body.id).toBe('ws-uuid-1')));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.id).toBe('ws-uuid-1');
+        }));
 
     it('404 – unknown id returns not found', () => {
       mockRepo.findOne.mockResolvedValueOnce(null);
       return request(app.getHttpServer())
-        .get('/api/workspaces/unknown-id')
+        .get('/api/v1/workspaces/unknown-id')
         .expect(404);
     });
   });
 
-  // ── PATCH /api/workspaces/:id ──────────────────────────────────────────────
+  // ── PATCH /api/v1/workspaces/:id ──────────────────────────────────────────────
 
-  describe('PATCH /api/workspaces/:id', () => {
+  describe('PATCH /api/v1/workspaces/:id', () => {
     it('200 – authenticated user updates workspace', () =>
       request(app.getHttpServer())
-        .patch('/api/workspaces/ws-uuid-1')
+        .patch('/api/v1/workspaces/ws-uuid-1')
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .send({ name: 'Updated Desk' })
         .expect(200));
 
     it('401 – unauthenticated request is rejected', () =>
       request(app.getHttpServer())
-        .patch('/api/workspaces/ws-uuid-1')
+        .patch('/api/v1/workspaces/ws-uuid-1')
         .send({ name: 'Updated Desk' })
         .expect(401));
   });
 
-  // ── DELETE /api/workspaces/:id ─────────────────────────────────────────────
+  // ── DELETE /api/v1/workspaces/:id ─────────────────────────────────────────────
 
-  describe('DELETE /api/workspaces/:id', () => {
+  describe('DELETE /api/v1/workspaces/:id', () => {
     it('200 – authenticated user soft-deletes workspace', () =>
       request(app.getHttpServer())
-        .delete('/api/workspaces/ws-uuid-1')
+        .delete('/api/v1/workspaces/ws-uuid-1')
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .expect(200));
   });

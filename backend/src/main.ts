@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
@@ -8,6 +8,8 @@ import helmet from 'helmet';
 const compression = require('compression');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './utils/error';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
@@ -17,6 +19,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
+
+  // URI versioning — all routes become /api/v{n}/...
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   // Security headers
   app.use(helmet());
@@ -36,12 +41,27 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
+  // Global interceptors
+  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
 
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('HubAssist API')
-    .setDescription('A comprehensive coworking and workspace management system powered by Stellar')
+    .setDescription(
+      'A comprehensive coworking and workspace management system powered by Stellar.\n\n' +
+      '## Response Format\n\n' +
+      'All successful responses are wrapped in a consistent envelope:\n\n' +
+      '```json\n' +
+      '{\n' +
+      '  "success": true,\n' +
+      '  "data": <payload>,\n' +
+      '  "timestamp": "2026-05-27T16:00:00.000Z"\n' +
+      '}\n' +
+      '```\n\n' +
+      'Error responses retain their original shape (statusCode, message, error, timestamp, path).',
+    )
     .setVersion('1.0.0')
+    .addServer('/api/v1', 'Version 1')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
     .build();
 

@@ -23,7 +23,7 @@ import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 import { WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 
 @ApiTags('workspaces')
-@Controller('workspaces')
+@Controller({ version: '1', path: 'workspaces' })
 export class WorkspacesController {
   constructor(private service: WorkspacesService) {}
 
