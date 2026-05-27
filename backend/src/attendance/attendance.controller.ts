@@ -16,7 +16,7 @@ import { ClockInDto, ClockOutDto } from './attendance.dto';
 @ApiTags('attendance')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard)
-@Controller('attendance')
+@Controller({ version: '1', path: 'attendance' })
 export class AttendanceController {
   constructor(private readonly attendanceService: AttendanceService) {}
 

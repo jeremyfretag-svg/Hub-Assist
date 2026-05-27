@@ -1,5 +1,5 @@
 import { Test, TestingModule } from '@nestjs/testing';
-import { INestApplication, ValidationPipe } from '@nestjs/common';
+import { INestApplication, ValidationPipe, VersioningType } from '@nestjs/common';
 import * as request from 'supertest';
 import { JwtService } from '@nestjs/jwt';
 import { JwtModule } from '@nestjs/jwt';
@@ -59,6 +59,7 @@ describe('Users (e2e)', () => {
 
     app = module.createNestApplication();
     app.setGlobalPrefix('api');
+    app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     await app.init();
 
@@ -67,12 +68,12 @@ describe('Users (e2e)', () => {
 
   afterAll(() => app.close());
 
-  // ── GET /api/users ─────────────────────────────────────────────────────────
+  // ── GET /api/v1/users ─────────────────────────────────────────────────────────
 
-  describe('GET /api/users', () => {
+  describe('GET /api/v1/users', () => {
     it('200 – admin gets all users', () =>
       request(app.getHttpServer())
-        .get('/api/users')
+        .get('/api/v1/users')
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .expect(200)
         .expect((res) => {
@@ -82,64 +83,64 @@ describe('Users (e2e)', () => {
 
     it('403 – non-admin gets forbidden', () =>
       request(app.getHttpServer())
-        .get('/api/users')
+        .get('/api/v1/users')
         .set('Authorization', `Bearer ${makeToken('member')}`)
         .expect(403));
 
     it('401 – unauthenticated gets unauthorized', () =>
-      request(app.getHttpServer()).get('/api/users').expect(401));
+      request(app.getHttpServer()).get('/api/v1/users').expect(401));
   });
 
-  // ── GET /api/users/:id ─────────────────────────────────────────────────────
+  // ── GET /api/v1/users/:id ─────────────────────────────────────────────────────
 
-  describe('GET /api/users/:id', () => {
+  describe('GET /api/v1/users/:id', () => {
     it('200 – user gets own profile', () =>
       request(app.getHttpServer())
-        .get('/api/users/user-uuid-1')
+        .get('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('member', 'user-uuid-1')}`)
         .expect(200)
         .expect((res) => expect(res.body.id).toBe('user-uuid-1')));
 
     it('200 – admin gets any profile', () =>
       request(app.getHttpServer())
-        .get('/api/users/user-uuid-1')
+        .get('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('admin', 'admin-uuid')}`)
         .expect(200));
   });
 
-  // ── PATCH /api/users/:id ───────────────────────────────────────────────────
+  // ── PATCH /api/v1/users/:id ───────────────────────────────────────────────────
 
-  describe('PATCH /api/users/:id', () => {
+  describe('PATCH /api/v1/users/:id', () => {
     it('200 – user updates own profile', () =>
       request(app.getHttpServer())
-        .patch('/api/users/user-uuid-1')
+        .patch('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('member', 'user-uuid-1')}`)
         .send({ email: 'updated@test.com' })
         .expect(200));
   });
 
-  // ── DELETE /api/users/:id ──────────────────────────────────────────────────
+  // ── DELETE /api/v1/users/:id ──────────────────────────────────────────────────
 
-  describe('DELETE /api/users/:id', () => {
+  describe('DELETE /api/v1/users/:id', () => {
     it('200 – admin soft-deletes user', () =>
       request(app.getHttpServer())
-        .delete('/api/users/user-uuid-1')
+        .delete('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .expect(200));
 
     it('403 – non-admin gets forbidden', () =>
       request(app.getHttpServer())
-        .delete('/api/users/user-uuid-1')
+        .delete('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('member')}`)
         .expect(403));
   });
 
-  // ── POST /api/users/:id/profile-picture ───────────────────────────────────
+  // ── POST /api/v1/users/:id/profile-picture ───────────────────────────────────
 
-  describe('POST /api/users/:id/profile-picture', () => {
+  describe('POST /api/v1/users/:id/profile-picture', () => {
     it('200 – uploads image and returns updated profile picture URL', () =>
       request(app.getHttpServer())
-        .post('/api/users/user-uuid-1/profile-picture')
+        .post('/api/v1/users/user-uuid-1/profile-picture')
         .set('Authorization', `Bearer ${makeToken('member', 'user-uuid-1')}`)
         .attach('file', Buffer.from('fake-image'), { filename: 'avatar.png', contentType: 'image/png' })
         .expect(200)

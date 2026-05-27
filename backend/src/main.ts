@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import helmet from 'helmet';
@@ -14,6 +14,9 @@ async function bootstrap() {
   const configService = app.get(ConfigService);
 
   app.setGlobalPrefix('api');
+
+  // URI versioning — all routes become /api/v{n}/...
+  app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
 
   // Security headers
   app.use(helmet());
@@ -33,12 +36,12 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
-
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('HubAssist API')
     .setDescription('A comprehensive coworking and workspace management system powered by Stellar')
     .setVersion('1.0.0')
+    .addServer('/api/v1', 'Version 1')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')
     .build();
 

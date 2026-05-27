@@ -32,7 +32,7 @@ import { RolesGuard } from '../common/guards/roles.guard';
 @ApiTags('users')
 @ApiBearerAuth('bearer')
 @UseGuards(JwtAuthGuard, RolesGuard)
-@Controller('users')
+@Controller({ version: '1', path: 'users' })
 export class UsersController {
   constructor(
     private readonly usersService: UsersService,
