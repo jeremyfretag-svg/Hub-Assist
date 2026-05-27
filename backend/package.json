@@ -11,7 +11,8 @@
     "test": "jest --config jest.config.ts",
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
-    "test:e2e": "jest --config jest-e2e.config.ts"
+    "test:e2e": "jest --config jest-e2e.config.ts",
+    "validate-env": "node scripts/validate-env.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",

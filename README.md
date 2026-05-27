@@ -1,5 +1,8 @@
 # HubAssist
 
+[![CI](https://github.com/Hub-Assist/Hub-Assist/actions/workflows/ci.yml/badge.svg)](https://github.com/Hub-Assist/Hub-Assist/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/Hub-Assist/Hub-Assist/branch/main/graph/badge.svg)](https://codecov.io/gh/Hub-Assist/Hub-Assist)
+
 > A Comprehensive Coworking and Workspace Management System — powered by [Stellar](https://stellar.org)
 
 HubAssist is a full-stack monorepo platform designed to streamline **coworking and workspace management** for hubs, shared offices, and enterprise workspaces. It combines a modern web frontend, a robust REST API backend, and on-chain smart contracts deployed on the **Stellar** blockchain via **Soroban** — enabling trustless payments, membership tokens, and access control.
@@ -18,9 +21,14 @@ HubAssist is a full-stack monorepo platform designed to streamline **coworking a
    - [Environment Variables](#environment-variables)
 6. [Running the Project](#running-the-project)
 7. [Stellar / Soroban Contracts](#stellar--soroban-contracts)
-8. [Contributing](#contributing)
-9. [Roadmap](#roadmap)
-10. [License](#license)
+8. [Deployment](#deployment)
+   - [Frontend (Vercel)](#frontend-vercel)
+   - [Backend](#backend)
+   - [Contracts (Stellar Testnet)](#contracts-stellar-testnet)
+9. [Environment Variables Reference](#environment-variables-reference)
+10. [Contributing](#contributing)
+11. [Roadmap](#roadmap)
+12. [License](#license)
 
 ---
 
@@ -204,6 +212,33 @@ GET /api/health/detailed  → DB pool stats, memory, version (admin only)
 
 ---
 
+## Docker (Local Development)
+
+The entire stack can be started with Docker Compose:
+
+```bash
+# Copy and configure environment
+cp backend/.env.example backend/.env
+
+# Start all services (postgres + backend + frontend)
+docker compose up
+```
+
+`docker-compose.override.yml` is applied automatically in development — it mounts source directories into the containers for hot-reload.
+
+| Service    | URL                        |
+|------------|----------------------------|
+| Frontend   | http://localhost:3000       |
+| Backend    | http://localhost:3001       |
+| PostgreSQL | localhost:5432              |
+
+To run only the database (e.g. for local `npm run start:dev`):
+```bash
+docker compose up postgres
+```
+
+---
+
 ## Stellar / Soroban Contracts
 
 All smart contracts live in the `contracts/` directory and are written in **Rust** targeting the **Soroban** runtime on Stellar.
@@ -242,16 +277,137 @@ stellar contract deploy \
 
 ---
 
+## Deployment
+
+### Frontend (Vercel)
+
+The frontend is deployed to [Vercel](https://vercel.com). The repository ships with a `frontend/vercel.json` that pins the Next.js framework, build command, and security headers.
+
+#### Connect the repository
+
+1. From the Vercel dashboard, click **Add New → Project** and import the `Hub-Assist/Hub-Assist` GitHub repo.
+2. When prompted for the **Root Directory**, choose `frontend`.
+3. Vercel auto-detects Next.js. Keep the default **Build Command** (`next build`) and **Output Directory** (`.next`).
+
+#### Configure environment variables
+
+Set the following project environment variables in **Vercel → Project → Settings → Environment Variables** (apply to Production, Preview, and Development scopes as appropriate):
+
+| Variable | Example (Production) | Notes |
+|----------|----------------------|-------|
+| `NEXT_PUBLIC_API_URL` | `https://api.hubassist.com/api` | Public URL of the backend API. Must include the `/api` suffix. |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | `mainnet` | `testnet` for preview deployments. |
+| `NEXT_PUBLIC_APP_URL` | `https://hubassist.com` | Canonical public URL used in metadata and OG tags. |
+
+`frontend/.env.production` documents these variables but contains no real secrets.
+
+#### Custom domain
+
+1. In **Vercel → Project → Settings → Domains**, add your domain (e.g. `hubassist.com`).
+2. Add the suggested `A` / `CNAME` records at your DNS provider.
+3. Wait for Vercel to issue a TLS certificate (typically under a minute).
+4. Update `NEXT_PUBLIC_APP_URL` to the new domain and trigger a redeploy.
+
+#### Deploy from the CLI
+
+```bash
+# Preview deployment
+npm run deploy:frontend:preview
+
+# Production deployment
+npm run deploy:frontend
+```
+
+Both commands shell out to the [Vercel CLI](https://vercel.com/docs/cli); run `vercel login` once before first use.
+
+### Backend
+
+The backend is deployed via Docker (or any Node.js host that can run `npm run start:prod`). Ensure all variables listed in [Environment Variables Reference](#environment-variables-reference) are configured in the target environment.
+
+### Contracts (Stellar Testnet)
+
+Contracts can be deployed manually via `contracts/scripts/deploy.sh`, or automatically via the **Deploy Contracts** GitHub Actions workflow (`.github/workflows/deploy-contracts.yml`). The workflow can be triggered manually from the Actions tab and writes deployed contract IDs to `contracts/.env.testnet`.
+
+Required GitHub Actions secret:
+
+- `STELLAR_SECRET_KEY` — Stellar account secret key (starts with `S…`) used to fund deployment. Add it under **GitHub → Settings → Secrets and variables → Actions → New repository secret**.
+
+---
+
+## Environment Variables Reference
+
+### Backend (`backend/.env`)
+
+#### Database
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `DATABASE_URL` | string | yes | — | PostgreSQL connection string. |
+
+#### JWT / Auth
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `JWT_SECRET` | string | yes | — | Secret used to sign access tokens. |
+| `JWT_EXPIRES_IN` | string | no | `1h` | Access token TTL (e.g. `15m`, `1h`). |
+| `REFRESH_TOKEN_SECRET` | string | yes | — | Secret used to sign refresh tokens. |
+| `REFRESH_TOKEN_EXPIRES_IN` | string | no | `7d` | Refresh token TTL. |
+
+#### Email (SMTP)
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `SMTP_HOST` | string | no | — | SMTP server hostname. |
+| `SMTP_PORT` | number | no | — | SMTP server port (often 587 or 465). |
+| `SMTP_USER` | string | no | — | SMTP username. |
+| `SMTP_PASSWORD` | string | no | — | SMTP password or app password. |
+| `EMAIL_FROM` | string | no | — | Default "From" address for outbound mail. |
+
+#### Cloudinary (file uploads)
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `CLOUDINARY_CLOUD_NAME` | string | no | — | Cloudinary cloud name. |
+| `CLOUDINARY_API_KEY` | string | no | — | Cloudinary API key. |
+| `CLOUDINARY_API_SECRET` | string | no | — | Cloudinary API secret. |
+
+#### Stellar / Contracts
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `STELLAR_NETWORK` | enum | no | `testnet` | `testnet` or `mainnet`. |
+| `WORKSPACE_BOOKING_CONTRACT_ID` | string | no | — | Deployed `workspace_booking` contract ID. |
+| `MEMBERSHIP_TOKEN_CONTRACT_ID` | string | no | — | Deployed `membership_token` contract ID. |
+
+#### App
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `NODE_ENV` | enum | no | `development` | `development`, `production`, or `test`. |
+| `FRONTEND_URL` | string | no | `http://localhost:3000` | Allowed CORS origin. |
+
+### Frontend (`frontend/.env.local`)
+
+| Variable | Type | Required | Default | Description |
+|----------|------|----------|---------|-------------|
+| `NEXT_PUBLIC_API_URL` | string | yes | `http://localhost:3001/api` | Public URL of the backend API, including the `/api` suffix. |
+| `NEXT_PUBLIC_STELLAR_NETWORK` | enum | no | `testnet` | `testnet` or `mainnet`. |
+| `NEXT_PUBLIC_APP_URL` | string | no | `http://localhost:3000` | Canonical public URL of the app. |
+
+To validate the backend env config without booting the app, run:
+
+```bash
+npm run validate-env
+```
+
+This runs `backend/scripts/validate-env.js`, which loads `backend/.env` and checks it against the Joi schema in `backend/src/config/validation.schema.ts`.
+
+---
+
 ## Contributing
 
-Contributions are welcome! Please follow these steps:
+Contributions are welcome! See [CONTRIBUTING.md](CONTRIBUTING.md) for the full guide covering local setup, branch naming, [Conventional Commits](https://www.conventionalcommits.org/), and the pull request process.
+
+Quick start:
 
 1. Fork the repository
-2. Create a feature branch: `git checkout -b feature/your-feature`
-3. Commit your changes with clear messages
-4. Push and open a Pull Request
-
-Please follow the existing code style and architecture patterns in each package.
+2. Create a feature branch: `git checkout -b feat/your-feature`
+3. Commit your changes following Conventional Commits (`feat: ...`, `fix: ...`, etc.)
+4. Push and open a Pull Request — the PR template will populate automatically
 
 ---
 
