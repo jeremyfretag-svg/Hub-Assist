@@ -109,10 +109,11 @@ pub fn get_role(env: &Env, user: Address) -> Result<MembershipInfo, AccessContro
 }
 
 pub fn check_access(env: &Env, user: Address, required_role: UserRole) -> bool {
-    match env.storage().persistent().get::<_, MembershipInfo>(&DataKey::Role(user)) {
-        Some(info) => info.role >= required_role,
-        None => false,
-    }
+    let role = match env.storage().persistent().get::<_, MembershipInfo>(&DataKey::Role(user)) {
+        Some(info) => info.role,
+        None => UserRole::Guest,
+    };
+    role >= required_role
 }
 
 pub fn require_access(

@@ -95,7 +95,8 @@ fn test_check_access_returns_false_for_unknown_user() {
     let env = Env::default();
     let (_, client) = setup(&env);
     let stranger = Address::generate(&env);
-    assert!(!client.check_access(&stranger, &UserRole::Guest));
+    assert!(client.check_access(&stranger, &UserRole::Guest));
+    assert!(!client.check_access(&stranger, &UserRole::Member));
 }
 
 // ── require_access ────────────────────────────────────────────────────────────
@@ -499,8 +500,8 @@ fn test_remove_role_reverts_to_guest() {
 
     client.remove_role(&admin, &user);
 
-    // no role entry → treated as Guest (check_access returns false for any role)
-    assert!(!client.check_access(&user, &UserRole::Guest));
+    // no role entry → treated as Guest (check_access returns true for Guest, false for higher)
+    assert!(client.check_access(&user, &UserRole::Guest));
     assert!(!client.check_access(&user, &UserRole::Member));
     assert_eq!(client.try_get_role(&user), Err(Ok(AccessControlError::UserNotFound)));
 }
