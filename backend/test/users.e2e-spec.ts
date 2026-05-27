@@ -61,6 +61,9 @@ describe('Users (e2e)', () => {
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     jwtService = module.get(JwtService);
@@ -77,8 +80,9 @@ describe('Users (e2e)', () => {
         .set('Authorization', `Bearer ${makeToken('admin')}`)
         .expect(200)
         .expect((res) => {
-          expect(res.body.users).toBeInstanceOf(Array);
-          expect(res.body.total).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.users).toBeInstanceOf(Array);
+          expect(res.body.data.total).toBeDefined();
         }));
 
     it('403 – non-admin gets forbidden', () =>
@@ -99,7 +103,10 @@ describe('Users (e2e)', () => {
         .get('/api/v1/users/user-uuid-1')
         .set('Authorization', `Bearer ${makeToken('member', 'user-uuid-1')}`)
         .expect(200)
-        .expect((res) => expect(res.body.id).toBe('user-uuid-1')));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.id).toBe('user-uuid-1');
+        }));
 
     it('200 – admin gets any profile', () =>
       request(app.getHttpServer())
@@ -144,6 +151,9 @@ describe('Users (e2e)', () => {
         .set('Authorization', `Bearer ${makeToken('member', 'user-uuid-1')}`)
         .attach('file', Buffer.from('fake-image'), { filename: 'avatar.png', contentType: 'image/png' })
         .expect(200)
-        .expect((res) => expect(res.body.profilePictureUrl).toBeDefined()));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.profilePictureUrl).toBeDefined();
+        }));
   });
 });

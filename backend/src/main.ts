@@ -7,6 +7,8 @@ import helmet from 'helmet';
 const compression = require('compression');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './utils/error';
+import { TransformInterceptor } from './common/interceptors/transform.interceptor';
+import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -36,10 +38,25 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
+  // Global interceptors
+  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
+
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('HubAssist API')
-    .setDescription('A comprehensive coworking and workspace management system powered by Stellar')
+    .setDescription(
+      'A comprehensive coworking and workspace management system powered by Stellar.\n\n' +
+      '## Response Format\n\n' +
+      'All successful responses are wrapped in a consistent envelope:\n\n' +
+      '```json\n' +
+      '{\n' +
+      '  "success": true,\n' +
+      '  "data": <payload>,\n' +
+      '  "timestamp": "2026-05-27T16:00:00.000Z"\n' +
+      '}\n' +
+      '```\n\n' +
+      'Error responses retain their original shape (statusCode, message, error, timestamp, path).',
+    )
     .setVersion('1.0.0')
     .addServer('/api/v1', 'Version 1')
     .addBearerAuth({ type: 'http', scheme: 'bearer', bearerFormat: 'JWT' }, 'bearer')

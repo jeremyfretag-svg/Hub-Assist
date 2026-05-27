@@ -24,12 +24,18 @@ apiClient.interceptors.request.use(async (config) => {
   return config;
 });
 
-// Response interceptor — handle 401 with one refresh retry
+// Response interceptor — unwrap { success, data, timestamp } envelope + handle 401 with one refresh retry
 let isRefreshing = false;
 let refreshQueue: Array<(token: string) => void> = [];
 
 apiClient.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    // Unwrap the { success, data, timestamp } envelope when present
+    if (res.data && typeof res.data === 'object' && 'success' in res.data && 'data' in res.data) {
+      res.data = res.data.data;
+    }
+    return res;
+  },
   async (error) => {
     const original = error.config;
 

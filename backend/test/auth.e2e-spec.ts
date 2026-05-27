@@ -47,6 +47,9 @@ describe('Auth (e2e)', () => {
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     jwtService = module.get(JwtService);
@@ -68,7 +71,10 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/register')
         .send({ email: 'newuser@test.com', password: 'SecurePass123' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBeDefined());
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBeDefined();
+        });
     });
   });
 
@@ -86,8 +92,9 @@ describe('Auth (e2e)', () => {
         .send({ email: 'user@test.com', password: 'SecurePass123' })
         .expect(201)
         .expect((res) => {
-          expect(res.body.access_token).toBeDefined();
-          expect(res.body.refresh_token).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.access_token).toBeDefined();
+          expect(res.body.data.refresh_token).toBeDefined();
         });
     });
 
@@ -111,7 +118,10 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/verify-otp')
         .send({ email: 'user@test.com', otp: '123456' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Email verified successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Email verified successfully');
+        });
     });
   });
 
@@ -129,8 +139,9 @@ describe('Auth (e2e)', () => {
         .send({ refreshToken: 'valid-refresh-token' })
         .expect(201)
         .expect((res) => {
-          expect(res.body.access_token).toBeDefined();
-          expect(res.body.refresh_token).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.access_token).toBeDefined();
+          expect(res.body.data.refresh_token).toBeDefined();
         });
     });
 
@@ -158,7 +169,10 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/forgot-password')
         .send({ email: 'user@test.com' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBeDefined());
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBeDefined();
+        });
     });
   });
 
@@ -172,7 +186,10 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/reset-password')
         .send({ email: 'user@test.com', otp: '123456', newPassword: 'NewSecurePass123' })
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Password reset successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Password reset successfully');
+        });
     });
 
     it('401 – invalid OTP returns unauthorized', async () => {
@@ -197,7 +214,10 @@ describe('Auth (e2e)', () => {
         .post('/api/v1/auth/logout')
         .set('Authorization', `Bearer ${makeToken()}`)
         .expect(201)
-        .expect((res) => expect(res.body.message).toBe('Logged out successfully'));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.message).toBe('Logged out successfully');
+        });
     });
 
     it('401 – unauthenticated request is rejected', () =>

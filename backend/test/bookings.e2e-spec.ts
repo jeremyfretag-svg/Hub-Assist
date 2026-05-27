@@ -45,6 +45,9 @@ describe('Bookings (e2e)', () => {
     app = module.createNestApplication();
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     connection = getConnection();
@@ -127,7 +130,8 @@ describe('Bookings (e2e)', () => {
         totalAmount: 100,
       }).expect(201);
 
-      expect(response.body).toMatchObject({
+      expect(response.body.success).toBe(true);
+      expect(response.body.data).toMatchObject({
         workspaceId: testWorkspaceId,
         startTime,
         endTime,
@@ -178,7 +182,7 @@ describe('Bookings (e2e)', () => {
         stellarTxHash: 'test-tx-hash-1',
       }).expect(201);
 
-      const bookingId = createRes.body.id;
+      const bookingId = createRes.body.data.id;
 
        // Confirm the booking (admin only)
        await request(app.getHttpServer())
@@ -216,8 +220,8 @@ describe('Bookings (e2e)', () => {
         .set('Authorization', `Bearer ${authTokenMember}`)
         .expect(200);
 
-      expect(Array.isArray(response.body)).toBe(true);
-      response.body.forEach((booking: any) => {
+      expect(Array.isArray(response.body.data)).toBe(true);
+      response.body.data.forEach((booking: any) => {
         expect(booking.userId).toBe(memberUser.id);
       });
     });
@@ -238,8 +242,8 @@ describe('Bookings (e2e)', () => {
         .set('Authorization', `Bearer ${authTokenAdmin}`)
         .expect(200);
 
-      expect(Array.isArray(response.body)).toBe(true);
-      const userIds = response.body.map((b: any) => b.userId);
+      expect(Array.isArray(response.body.data)).toBe(true);
+      const userIds = response.body.data.map((b: any) => b.userId);
       expect(userIds).toContain(memberUser.id);
     });
   });
@@ -257,7 +261,7 @@ describe('Bookings (e2e)', () => {
         stellarTxHash: 'test-tx-hash-confirm',
       }).expect(201);
 
-      const bookingId = createRes.body.id;
+      const bookingId = createRes.body.data.id;
 
       await request(app.getHttpServer())
         .patch(`/api/v1/bookings/${bookingId}/confirm`)
@@ -268,7 +272,7 @@ describe('Bookings (e2e)', () => {
         .get(`/api/v1/bookings/${bookingId}`)
         .set('Authorization', `Bearer ${authTokenAdmin}`)
         .expect(200);
-      expect(getRes.body.status).toBe('Confirmed');
+      expect(getRes.body.data.status).toBe('Confirmed');
     });
 
     it('should return 403 for non-admin attempting to confirm', async () => {
@@ -283,7 +287,7 @@ describe('Bookings (e2e)', () => {
         stellarTxHash: 'test-tx-hash-confirm2',
       }).expect(201);
 
-      const bookingId = createRes.body.id;
+      const bookingId = createRes.body.data.id;
 
       await request(app.getHttpServer())
         .patch(`/api/v1/bookings/${bookingId}/confirm`)
@@ -304,7 +308,7 @@ describe('Bookings (e2e)', () => {
         totalAmount: 100,
       }).expect(201);
 
-      const bookingId = createRes.body.id;
+      const bookingId = createRes.body.data.id;
 
       await request(app.getHttpServer())
         .patch(`/api/v1/bookings/${bookingId}/cancel`)
@@ -315,7 +319,7 @@ describe('Bookings (e2e)', () => {
         .get(`/api/v1/bookings/${bookingId}`)
         .set('Authorization', `Bearer ${authTokenMember}`)
         .expect(200);
-      expect(getRes.body.status).toBe('Cancelled');
+      expect(getRes.body.data.status).toBe('Cancelled');
     });
 
     it('should return 403 for other user attempting to cancel', async () => {
@@ -329,7 +333,7 @@ describe('Bookings (e2e)', () => {
         totalAmount: 100,
       }).expect(201);
 
-      const bookingId = createRes.body.id;
+      const bookingId = createRes.body.data.id;
 
       await request(app.getHttpServer())
         .patch(`/api/v1/bookings/${bookingId}/cancel`)

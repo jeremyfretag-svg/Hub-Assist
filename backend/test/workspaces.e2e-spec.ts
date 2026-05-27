@@ -71,6 +71,9 @@ describe('Workspaces (e2e)', () => {
     app.setGlobalPrefix('api');
     app.enableVersioning({ type: VersioningType.URI, defaultVersion: '1' });
     app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
+    const { TransformInterceptor } = await import('../src/common/interceptors/transform.interceptor');
+    const { LoggingInterceptor } = await import('../src/common/interceptors/logging.interceptor');
+    app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
     await app.init();
 
     jwtService = module.get(JwtService);
@@ -108,8 +111,9 @@ describe('Workspaces (e2e)', () => {
         .get('/api/v1/workspaces')
         .expect(200)
         .expect((res) => {
-          expect(res.body.data).toBeInstanceOf(Array);
-          expect(res.body.total).toBeDefined();
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.data).toBeInstanceOf(Array);
+          expect(res.body.data.total).toBeDefined();
         }));
 
     it('200 – supports page and limit query params', () =>
@@ -130,7 +134,10 @@ describe('Workspaces (e2e)', () => {
       request(app.getHttpServer())
         .get('/api/v1/workspaces/ws-uuid-1')
         .expect(200)
-        .expect((res) => expect(res.body.id).toBe('ws-uuid-1')));
+        .expect((res) => {
+          expect(res.body.success).toBe(true);
+          expect(res.body.data.id).toBe('ws-uuid-1');
+        }));
 
     it('404 – unknown id returns not found', () => {
       mockRepo.findOne.mockResolvedValueOnce(null);
