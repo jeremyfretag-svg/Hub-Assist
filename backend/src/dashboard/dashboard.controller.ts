@@ -1,5 +1,6 @@
-import { Controller, Get } from '@nestjs/common';
+import { Controller, Get, UseInterceptors } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { DashboardService } from './dashboard.service';
@@ -11,6 +12,9 @@ export class DashboardController {
   constructor(private service: DashboardService) {}
 
   @Get('stats')
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey('dashboard:stats')
+  @CacheTTL(60) // 1 minute
   @ApiOperation({ summary: 'Get dashboard statistics' })
   @ApiResponse({ status: 200, description: 'Dashboard stats retrieved successfully' })
   getStats() {

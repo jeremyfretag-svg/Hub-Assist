@@ -6,9 +6,10 @@ import { BookingsController } from './bookings.controller';
 import { StellarModule } from '../stellar/stellar.module';
 import { Workspace } from '../workspaces/workspace.entity';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, Workspace]), StellarModule],
+  imports: [TypeOrmModule.forFeature([Booking, Workspace]), StellarModule, NotificationsModule],
   providers: [BookingsService, RolesGuard],
   controllers: [BookingsController],
   exports: [BookingsService],
