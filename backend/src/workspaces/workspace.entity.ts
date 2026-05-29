@@ -7,6 +7,7 @@ import {
   DeleteDateColumn,
 } from 'typeorm';
 
+
 export enum WorkspaceType {
   HOT_DESK = 'HotDesk',
   DEDICATED_DESK = 'DedicatedDesk',
@@ -46,6 +47,9 @@ export class Workspace {
 
   @Column({ type: 'text', array: true, default: () => "'{}'" })
   amenities: string[];
+
+  @Column({ nullable: true })
+  hubId?: string;
 
   @Column({ default: true })
   isActive: boolean;

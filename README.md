@@ -310,6 +310,60 @@ URI versioning is used (`/api/v1/`, `/api/v2/`, ...). The current version is **v
 | newsletter  | `/api/v1/newsletter` | Subscription management            |
 | contact     | `/api/v1/contact`    | Contact form                       |
 | dashboard   | `/api/v1/dashboard`  | Stats and activity                 |
+| hubs        | `/api/v1/hubs`       | Multi-hub management               |
+| analytics   | `/api/v1/analytics`  | Admin analytics & reporting        |
+| stellar     | `/api/v1/stellar`    | Stellar transaction verification   |
+
+---
+
+## Full-Stack Integration
+
+### Booking Flow
+
+```
+BookingForm (frontend)
+  → POST /api/v1/bookings  { workspaceId, startTime, endTime, totalAmount, stellarTxHash? }
+  → BookingsService validates workspace + checks overlaps
+  → StellarService.verifyTransaction(stellarTxHash)  [on confirm]
+  → Booking stored in PostgreSQL
+  → Confirmation returned to frontend
+```
+
+### Membership Token Flow
+
+```
+Admin dashboard
+  → POST /api/v1/membership-tokens  { userId, tier, expiryDate }
+  → Backend calls Soroban membership_token.issue_token(...)
+  → Token ID stored on user record
+```
+
+### Attendance Flow
+
+```
+ClockButton (frontend)
+  → POST /api/v1/attendance/clock-in  or  /clock-out
+  → AttendanceService stores record in PostgreSQL
+  → (optional) manage_hub.log_attendance called on-chain
+```
+
+### Stellar Transaction Verification
+
+```
+POST /api/v1/stellar/verify-tx  { txHash }
+  → StellarService.verifyTransaction(txHash)
+  → Returns transaction status from Soroban RPC
+```
+
+### Smoke Test
+
+Run the full end-to-end smoke test against a running backend:
+
+```bash
+./scripts/smoke-test.sh http://localhost:3001/api/v1
+```
+
+The script exercises: register → login → browse workspaces → create booking → clock in → clock out → health check → verify-tx endpoint.
 
 ---
 
@@ -512,6 +566,50 @@ Quick start:
 2. Create a feature branch: `git checkout -b feat/your-feature`
 3. Commit your changes following Conventional Commits (`feat: ...`, `fix: ...`, etc.)
 4. Push and open a Pull Request — the PR template will populate automatically
+
+---
+
+## Multi-Hub Architecture
+
+HubAssist supports managing multiple independent hubs (franchise/chain model) from a single platform instance.
+
+### Hub Model
+
+Each hub has:
+- `id` — UUID primary key
+- `name` — display name
+- `slug` — unique URL-friendly identifier
+- `address` — physical address (optional)
+- `ownerId` — FK to the User who owns the hub
+- `isActive` — soft enable/disable flag
+- `createdAt` — creation timestamp
+
+### Hub-scoped Resources
+
+`Workspace`, `Booking`, and `Attendance` records each carry an optional `hubId` foreign key. This allows:
+- Filtering workspaces and bookings by hub
+- Reporting attendance per hub
+- Isolating data between franchise locations
+
+### API Endpoints
+
+| Method | Path | Auth | Description |
+|--------|------|------|-------------|
+| `POST` | `/api/v1/hubs` | admin | Create a new hub |
+| `GET` | `/api/v1/hubs` | any | List all hubs |
+| `GET` | `/api/v1/hubs/:slug` | any | Get hub details with its workspaces |
+
+### On-chain Registry
+
+The `hubassist_hub` Soroban contract has been updated to support multiple hub registrations. Each hub is stored with a `hub_id` field, and members are registered per hub:
+
+```
+register_hub(caller, name)  → hub_id
+get_hub(hub_id)             → Hub { hub_id, name, owner, active }
+hub_count()                 → u32
+register_member(caller, hub_id, role)
+member_count(hub_id)        → u32
+```
 
 ---
 

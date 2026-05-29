@@ -16,6 +16,8 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { NewsletterModule } from './newsletter/newsletter.module';
 import { CloudinaryModule } from './cloudinary/cloudinary.module';
 import { HealthModule } from './health/health.module';
+import { HubsModule } from './hubs/hubs.module';
+import { AnalyticsModule } from './analytics/analytics.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -51,6 +53,8 @@ import { RolesGuard } from './common/guards/roles.guard';
     NewsletterModule,
     CloudinaryModule,
     HealthModule,
+    HubsModule,
+    AnalyticsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

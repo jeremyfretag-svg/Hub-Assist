@@ -208,4 +208,22 @@ export const api = {
 
   getDashboardGrowth: () =>
     get<Array<{ date: string; members: number }>>('/dashboard/growth'),
+
+  getAnalyticsMemberGrowth: (period: '7d' | '30d' | '90d' = '30d') =>
+    get<Array<{ date: string; count: number }>>(`/analytics/member-growth?period=${period}`),
+
+  getAnalyticsBookingRevenue: (period: '7d' | '30d' | '90d' = '30d') =>
+    get<Array<{ date: string; revenue: number }>>(`/analytics/booking-revenue?period=${period}`),
+
+  getAnalyticsWorkspaceUtilization: () =>
+    get<Array<{ workspaceId: string; name: string; utilizationPct: number }>>('/analytics/workspace-utilization'),
+
+  getAnalyticsAttendancePatterns: () =>
+    get<{ peakHours: Array<{ hour: number; count: number }>; dayOfWeekPatterns: Array<{ day: string; count: number }> }>('/analytics/attendance-patterns'),
+
+  verifyStellarTx: (txHash: string) =>
+    post<{ status: string; [key: string]: unknown }>('/stellar/verify-tx', { txHash }),
+
+  issueMembershipToken: (data: { userId: string; tier: number; expiryDate: string }) =>
+    post<{ tokenId: string; message: string }>('/membership-tokens', data),
 };

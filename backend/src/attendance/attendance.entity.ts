@@ -36,4 +36,7 @@ export class Attendance {
 
   @Column({ type: 'jsonb', nullable: true })
   details?: Record<string, any>;
+
+  @Column({ nullable: true })
+  hubId?: string;
 }

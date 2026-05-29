@@ -51,6 +51,9 @@ export class Booking {
   @Column({ nullable: true, default: null })
   stellarTxHash!: string;
 
+  @Column({ nullable: true })
+  hubId?: string;
+
   @CreateDateColumn()
   createdAt!: Date;
 

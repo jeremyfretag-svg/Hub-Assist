@@ -10,9 +10,21 @@ pub struct Member {
 }
 
 #[contracttype]
+#[derive(Clone)]
+pub struct Hub {
+    pub hub_id: u32,
+    pub name: String,
+    pub owner: Address,
+    pub active: bool,
+}
+
+#[contracttype]
 pub enum DataKey {
     Admin,
     Members,
+    HubCount,
+    Hub(u32),
+    HubMembers(u32),
 }
 
 #[contract]
@@ -20,7 +32,7 @@ pub struct HubAssistHub;
 
 #[contractimpl]
 impl HubAssistHub {
-    /// Initialize the hub with an admin address.
+    /// Initialize the registry with an admin address.
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
@@ -28,24 +40,59 @@ impl HubAssistHub {
         env.storage().instance().set(&DataKey::Members, &members);
     }
 
-    /// Register a new member.
-    pub fn register_member(env: Env, caller: Address, role: String) {
+    /// Register a new hub. Returns the new hub_id.
+    pub fn register_hub(env: Env, caller: Address, name: String) -> u32 {
+        caller.require_auth();
+        let count: u32 = env
+            .storage()
+            .instance()
+            .get(&DataKey::HubCount)
+            .unwrap_or(0u32)
+            + 1;
+        let hub = Hub {
+            hub_id: count,
+            name,
+            owner: caller,
+            active: true,
+        };
+        env.storage().instance().set(&DataKey::Hub(count), &hub);
+        env.storage().instance().set(&DataKey::HubCount, &count);
+        count
+    }
+
+    /// Get a hub by hub_id.
+    pub fn get_hub(env: Env, hub_id: u32) -> Option<Hub> {
+        env.storage().instance().get(&DataKey::Hub(hub_id))
+    }
+
+    /// Return total hub count.
+    pub fn hub_count(env: Env) -> u32 {
+        env.storage()
+            .instance()
+            .get(&DataKey::HubCount)
+            .unwrap_or(0u32)
+    }
+
+    /// Register a member to a specific hub.
+    pub fn register_member(env: Env, caller: Address, hub_id: u32, role: String) {
         caller.require_auth();
         let mut members: Vec<Member> = env
             .storage()
             .instance()
-            .get(&DataKey::Members)
+            .get(&DataKey::HubMembers(hub_id))
             .unwrap_or(Vec::new(&env));
         members.push_back(Member { address: caller, role, active: true });
-        env.storage().instance().set(&DataKey::Members, &members);
+        env.storage()
+            .instance()
+            .set(&DataKey::HubMembers(hub_id), &members);
     }
 
-    /// Return total member count.
-    pub fn member_count(env: Env) -> u32 {
+    /// Return member count for a specific hub.
+    pub fn member_count(env: Env, hub_id: u32) -> u32 {
         let members: Vec<Member> = env
             .storage()
             .instance()
-            .get(&DataKey::Members)
+            .get(&DataKey::HubMembers(hub_id))
             .unwrap_or(Vec::new(&env));
         members.len()
     }
