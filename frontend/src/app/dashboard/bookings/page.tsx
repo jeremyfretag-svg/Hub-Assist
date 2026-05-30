@@ -19,7 +19,7 @@ export default function BookingsPage() {
   const isAdmin = user?.role === "admin";
   const [tab, setTab] = useState<BookingStatus | "all">("all");
 
-  const { data: bookings = [], isLoading } = useQuery({
+  const { data: bookings = [], isLoading, isError } = useQuery({
     queryKey: ["bookings", tab],
     queryFn: () => api.getBookings(tab === "all" ? undefined : tab),
     enabled: !!token,
@@ -47,7 +47,15 @@ export default function BookingsPage() {
       </div>
 
       {isLoading ? (
-        <p className="text-sm text-[#6B6B6B]">Loading…</p>
+        <div className="flex flex-col gap-3">
+          {[1, 2, 3].map((i) => (
+            <div key={i} className="h-24 bg-[#EDE2D6] rounded-xl animate-pulse" />
+          ))}
+        </div>
+      ) : isError ? (
+        <div className="p-4 bg-red-50 text-red-600 rounded-lg border border-red-100">
+          Failed to load bookings. Please try again.
+        </div>
       ) : bookings.length === 0 ? (
         <p className="text-sm text-[#6B6B6B]">No bookings found.</p>
       ) : (

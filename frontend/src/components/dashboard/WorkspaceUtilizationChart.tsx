@@ -24,9 +24,13 @@ export function WorkspaceUtilizationChart() {
       <p className="text-xs font-semibold tracking-[0.1em] text-[#6B6B6B]">WORKSPACE UTILIZATION</p>
       {isPending ? (
         <div className="h-48 animate-pulse rounded-2xl bg-[#EDE2D6]" />
-      ) : isError || !data?.length ? (
-        <p className="py-8 text-center text-sm text-[#6B6B6B]">No data available</p>
-      ) : (
+      ) : (() => {
+        if (isError) {
+          throw new Error("Failed to load workspace utilization.");
+        }
+        return !data?.length ? (
+          <p className="py-8 text-center text-sm text-[#6B6B6B]">No data available</p>
+        ) : (
         <ResponsiveContainer width="100%" height={200}>
           <BarChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#D7CFC6" vertical={false} />

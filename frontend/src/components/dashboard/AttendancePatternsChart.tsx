@@ -16,7 +16,10 @@ export function AttendancePatternsChart() {
   });
 
   if (isPending) return <div className="h-48 animate-pulse rounded-2xl bg-[#EDE2D6]" />;
-  if (isError || !data) return null;
+  if (isError) {
+    throw new Error("Failed to load attendance patterns.");
+  }
+  if (!data) return null;
 
   const hourData = data.peakHours
     .map((h) => ({ label: `${h.hour}:00`, count: h.count }))

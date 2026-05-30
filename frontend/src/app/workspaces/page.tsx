@@ -126,13 +126,35 @@ function WorkspaceFilters({ filters, onFiltersChange }: {
 export default function WorkspacesPage() {
   const [filters, setFilters] = useState<WorkspaceFilters>({});
 
-  const { data, isLoading } = useQuery<WorkspacesResponse>({
+  const { data, isLoading, isError } = useQuery<WorkspacesResponse>({
     queryKey: ["workspaces", filters],
     queryFn: () => api.getWorkspaces(filters),
   });
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading workspaces...</div>;
+    return (
+      <div className="max-w-7xl mx-auto p-6">
+        <div className="mb-8">
+          <div className="h-8 bg-gray-200 rounded w-1/4 mb-2 animate-pulse"></div>
+          <div className="h-4 bg-gray-200 rounded w-1/3 animate-pulse"></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          {[1, 2, 3, 4, 5, 6].map((i) => (
+            <div key={i} className="bg-white rounded-lg shadow-md h-80 animate-pulse" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (isError) {
+    return (
+      <div className="max-w-7xl mx-auto p-6 text-center py-12">
+        <div className="bg-red-50 text-red-600 p-4 rounded-lg inline-block">
+          Failed to load workspaces. Please try again.
+        </div>
+      </div>
+    );
   }
 
   return (

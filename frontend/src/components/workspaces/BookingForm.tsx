@@ -22,7 +22,7 @@ export function BookingForm({ workspace, onBookingSuccess }: BookingFormProps) {
   const { showToast } = useToast();
   const [isBooking, setIsBooking] = useState(false);
 
-  const { data: workspacesResponse, isLoading: isLoadingWorkspaces } = useQuery({
+  const { data: workspacesResponse, isLoading: isLoadingWorkspaces, isError: isErrorWorkspaces } = useQuery({
     queryKey: ["workspaces"],
     queryFn: () => api.getWorkspaces(),
     enabled: !workspace, // only fetch if a specific workspace isn't provided
@@ -94,6 +94,8 @@ export function BookingForm({ workspace, onBookingSuccess }: BookingFormProps) {
               <option value="">Select a workspace</option>
               {isLoadingWorkspaces ? (
                 <option value="" disabled>Loading workspaces...</option>
+              ) : isErrorWorkspaces ? (
+                <option value="" disabled>Failed to load workspaces.</option>
               ) : (
                 workspaces.map((w) => (
                   <option key={w.id} value={w.id} disabled={!w.availability}>
