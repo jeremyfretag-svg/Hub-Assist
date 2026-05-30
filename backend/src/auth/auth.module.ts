@@ -17,12 +17,14 @@ import { ForgotPasswordProvider } from '../users/providers/forgot-password.provi
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
     NotificationsModule,
+    TokenBlacklistModule,
     TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

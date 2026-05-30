@@ -44,7 +44,22 @@ import { RolesGuard } from './common/guards/roles.guard';
       },
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 10 }]),
-    CacheModule.register({ isGlobal: true }),
+    // Redis-backed cache when REDIS_URL is set; falls back to in-memory otherwise.
+    CacheModule.registerAsync({
+      isGlobal: true,
+      inject: [ConfigService],
+      useFactory: async (configService: ConfigService) => {
+        const redisUrl = configService.get<string>('REDIS_URL');
+        if (redisUrl) {
+          const { redisInsStore } = await import('cache-manager-ioredis-yet');
+          const Redis = (await import('ioredis')).default;
+          const redisClient = new Redis(redisUrl);
+          return { store: redisInsStore(redisClient) };
+        }
+        // In-memory fallback (development / CI without Redis)
+        return {};
+      },
+    }),
     AuthModule,
     UsersModule,
     ContactModule,

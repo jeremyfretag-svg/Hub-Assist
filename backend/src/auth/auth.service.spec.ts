@@ -6,9 +6,13 @@ import { EmailService } from './email.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
+import { TokenBlacklistService } from './token-blacklist.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { UnauthorizedException, BadRequestException } from '@nestjs/common';
 import * as bcrypt from 'bcrypt';
 import { User, UserRole } from '../users/user.entity';
+
+jest.mock('bcrypt');
 
 jest.mock('bcrypt');
 
@@ -18,6 +22,7 @@ describe('AuthService', () => {
   let jwtService: jest.Mocked<JwtService>;
   let emailService: jest.Mocked<EmailService>;
   let refreshTokenRepository: jest.Mocked<RefreshTokenRepository>;
+  let tokenBlacklistService: jest.Mocked<TokenBlacklistService>;
 
   const mockUser: User = {
     id: 'user-123',
@@ -72,6 +77,20 @@ describe('AuthService', () => {
           provide: ResetPasswordProvider,
           useValue: {},
         },
+        {
+          provide: TokenBlacklistService,
+          useValue: {
+            blacklistToken: jest.fn().mockResolvedValue(undefined),
+            isBlacklisted: jest.fn().mockResolvedValue(false),
+          },
+        },
+        {
+          provide: NotificationsService,
+          useValue: {
+            sendToAll: jest.fn(),
+            sendToUser: jest.fn(),
+          },
+        },
       ],
     }).compile();
 
@@ -80,6 +99,7 @@ describe('AuthService', () => {
     jwtService = module.get(JwtService);
     emailService = module.get(EmailService);
     refreshTokenRepository = module.get(RefreshTokenRepository);
+    tokenBlacklistService = module.get(TokenBlacklistService);
 
     jest.clearAllMocks();
   });
@@ -147,11 +167,14 @@ describe('AuthService', () => {
       });
       expect(usersService.findByEmail).toHaveBeenCalledWith(email);
       expect(bcrypt.compare).toHaveBeenCalledWith(password, mockUser.passwordHash);
-      expect(jwtService.sign).toHaveBeenCalledWith({
-        sub: mockUser.id,
-        email: mockUser.email,
-        role: mockUser.role,
-      });
+      expect(jwtService.sign).toHaveBeenCalledWith(
+        expect.objectContaining({
+          sub: mockUser.id,
+          email: mockUser.email,
+          role: mockUser.role,
+          jti: expect.any(String),
+        }),
+      );
     });
 
     it('should throw UnauthorizedException for wrong password', async () => {
@@ -189,7 +212,7 @@ describe('AuthService', () => {
   });
 
   describe('verifyOtp', () => {
-    it('should successfully verify valid OTP', async () => {
+    it('should successfully verify valid OTP and return tokens', async () => {
       const email = 'test@example.com';
       const otp = '123456';
       const otpHash = 'hashedOtp';
@@ -199,10 +222,16 @@ describe('AuthService', () => {
       usersService.findByEmail.mockResolvedValue(userWithOtp);
       (bcrypt.compare as jest.Mock).mockResolvedValue(true);
       usersService.update.mockResolvedValue({ ...userWithOtp, isVerified: true });
+      (bcrypt.hash as jest.Mock).mockResolvedValue('hashedRefreshToken');
+      refreshTokenRepository.create.mockResolvedValue({} as any);
+      jwtService.sign.mockReturnValue('access-token');
 
       const result = await service.verifyOtp(email, otp);
 
-      expect(result).toEqual({ message: 'Email verified successfully' });
+      expect(result).toEqual({
+        access_token: 'access-token',
+        refresh_token: expect.any(String),
+      });
       expect(usersService.update).toHaveBeenCalledWith(userWithOtp.id, {
         isVerified: true,
         otp: undefined,
@@ -469,7 +498,7 @@ describe('AuthService', () => {
   });
 
   describe('logout', () => {
-    it('should successfully logout user', async () => {
+    it('should successfully logout user and revoke refresh tokens', async () => {
       const userId = 'user-123';
 
       refreshTokenRepository.revokeAllUserTokens.mockResolvedValue(undefined);
@@ -478,6 +507,33 @@ describe('AuthService', () => {
 
       expect(result).toEqual({ message: 'Logged out successfully' });
       expect(refreshTokenRepository.revokeAllUserTokens).toHaveBeenCalledWith(userId);
+    });
+
+    it('should blacklist the access token jti when jti and exp are provided', async () => {
+      const userId = 'user-123';
+      const jti = 'test-jti-uuid';
+      const exp = Math.floor(Date.now() / 1000) + 3600; // 1 hour from now
+
+      refreshTokenRepository.revokeAllUserTokens.mockResolvedValue(undefined);
+
+      await service.logout(userId, jti, exp);
+
+      expect(tokenBlacklistService.blacklistToken).toHaveBeenCalledWith(
+        jti,
+        expect.any(Number),
+      );
+      // TTL should be approximately 1 hour in ms (allow ±5 seconds)
+      const [, ttlMs] = (tokenBlacklistService.blacklistToken as jest.Mock).mock.calls[0];
+      expect(ttlMs).toBeGreaterThan(3_595_000);
+      expect(ttlMs).toBeLessThanOrEqual(3_600_000);
+    });
+
+    it('should NOT call blacklistToken when jti is absent', async () => {
+      refreshTokenRepository.revokeAllUserTokens.mockResolvedValue(undefined);
+
+      await service.logout('user-123');
+
+      expect(tokenBlacklistService.blacklistToken).not.toHaveBeenCalled();
     });
   });
 });
