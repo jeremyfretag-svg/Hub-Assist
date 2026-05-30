@@ -25,6 +25,13 @@ export class BookingsService {
         throw new NotFoundException('Workspace not found');
       }
 
+    // Validate no overlapping bookings with confirmed status
+    const overlapping = await this.repo
+      .createQueryBuilder('booking')
+      .where('booking.workspaceId = :workspaceId', { workspaceId: dto.workspaceId })
+      .andWhere('booking.status = :status', { status: BookingStatus.CONFIRMED })
+      .andWhere('(booking.startTime BETWEEN :startTime AND :endTime OR booking.endTime BETWEEN :startTime AND :endTime OR :startTime BETWEEN booking.startTime AND booking.endTime)', { startTime, endTime })
+      .getOne();
       const startTime = new Date(dto.startTime);
       const endTime = new Date(dto.endTime);
 

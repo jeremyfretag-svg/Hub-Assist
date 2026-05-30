@@ -1,83 +1,77 @@
-import { Injectable } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config';
-import * as nodemailer from 'nodemailer';
-import * as handlebars from 'handlebars';
-import * as fs from 'fs';
-import * as path from 'path';
+import { Injectable, InternalServerErrorException } from '@nestjs/common';
+import { MailerService } from '@nestjs-modules/mailer';
 
 @Injectable()
 export class EmailService {
-  private transporter: nodemailer.Transporter;
+  constructor(private readonly mailerService: MailerService) {}
 
-  constructor(private configService: ConfigService) {
-    this.transporter = nodemailer.createTransport({
-      host: this.configService.get('SMTP_HOST'),
-      port: this.configService.get('SMTP_PORT'),
-      auth: {
-        user: this.configService.get('SMTP_USER'),
-        pass: this.configService.get('SMTP_PASSWORD'),
-      },
-    });
-  }
-
-  private compileTemplate(name: string, context: any): string {
-    const templatePath = path.join(__dirname, 'templates', `${name}.hbs`);
-    const templateContent = fs.readFileSync(templatePath, 'utf-8');
-    const template = handlebars.compile(templateContent);
-    return template(context);
-  }
-
-  private async send(to: string, subject: string, html: string): Promise<void> {
-    await this.transporter.sendMail({
-      from: this.configService.get('EMAIL_FROM'),
-      to,
-      subject,
-      html,
-    });
+  private async sendTemplate(to: string, subject: string, template: string, context: any): Promise<void> {
+    try {
+      if (!context) {
+        throw new InternalServerErrorException(`Missing context for email template: ${template}`);
+      }
+      
+      await this.mailerService.sendMail({
+        to,
+        subject,
+        template,
+        context: {
+          ...context,
+          // Common template variables could go here
+        },
+      });
+    } catch (error: any) {
+      // In case template rendering fails due to missing variables or other issues
+      if (error instanceof InternalServerErrorException) {
+        throw error;
+      }
+      throw new InternalServerErrorException(`Failed to send email: ${error.message}`);
+    }
   }
 
   async sendVerificationOtp(email: string, otp: string): Promise<void> {
-    const html = this.compileTemplate('verification-otp', { otp });
-    await this.send(email, 'Verify Your Email', html);
+    if (!otp) throw new InternalServerErrorException('Missing required variable: otp');
+    await this.sendTemplate(email, 'Verify Your Email', 'otp-verification', { otp });
   }
 
   async sendVerificationLink(email: string, link: string): Promise<void> {
-    const html = this.compileTemplate('verification-link', { link });
-    await this.send(email, 'Verify Your Email', html);
+    if (!link) throw new InternalServerErrorException('Missing required variable: link');
+    await this.sendTemplate(email, 'Verify Your Email', 'welcome', { link });
   }
 
   async sendPasswordResetOtp(email: string, otp: string): Promise<void> {
-    const html = this.compileTemplate('password-reset-otp', { otp });
-    await this.send(email, 'Reset Your Password', html);
+    if (!otp) throw new InternalServerErrorException('Missing required variable: otp');
+    await this.sendTemplate(email, 'Reset Your Password', 'password-reset', { otp });
   }
 
   async sendPasswordResetSuccess(email: string): Promise<void> {
-    const html = this.compileTemplate('password-reset-success', {});
-    await this.send(email, 'Password Reset Successful', html);
+    await this.sendTemplate(email, 'Password Reset Successful', 'welcome', { message: 'Your password was successfully reset.' });
   }
 
   async sendContactConfirmation(email: string, name: string): Promise<void> {
-    const html = this.compileTemplate('contact-confirmation', { name });
-    await this.send(email, 'We Received Your Message', html);
+    if (!name) throw new InternalServerErrorException('Missing required variable: name');
+    await this.sendTemplate(email, 'We Received Your Message', 'welcome', { name, message: 'We have received your message and will get back to you soon.' });
   }
 
   async sendContactNotification(adminEmail: string, name: string, message: string): Promise<void> {
-    const html = this.compileTemplate('contact-notification', { name, message });
-    await this.send(adminEmail, 'New Contact Form Submission', html);
+    if (!name || !message) throw new InternalServerErrorException('Missing required variables');
+    await this.sendTemplate(adminEmail, 'New Contact Form Submission', 'welcome', { name, message });
   }
 
   async sendNewsletterConfirmation(email: string): Promise<void> {
-    const html = this.compileTemplate('newsletter-confirmation', {});
-    await this.send(email, 'Confirm Your Newsletter Subscription', html);
+    await this.sendTemplate(email, 'Confirm Your Newsletter Subscription', 'welcome', { message: 'Please confirm your newsletter subscription.' });
   }
 
   async sendNewsletterConfirmed(email: string): Promise<void> {
-    const html = this.compileTemplate('newsletter-confirmed', {});
-    await this.send(email, 'Newsletter Subscription Confirmed', html);
+    await this.sendTemplate(email, 'Newsletter Subscription Confirmed', 'welcome', { message: 'Your newsletter subscription is confirmed.' });
   }
 
   async sendNewsletterUnsubscribed(email: string): Promise<void> {
-    const html = this.compileTemplate('newsletter-unsubscribed', {});
-    await this.send(email, 'You Have Been Unsubscribed', html);
+    await this.sendTemplate(email, 'You Have Been Unsubscribed', 'welcome', { message: 'You have successfully unsubscribed from the newsletter.' });
+  }
+
+  async sendBookingConfirmation(email: string, bookingDetails: any): Promise<void> {
+    if (!bookingDetails) throw new InternalServerErrorException('Missing required variable: bookingDetails');
+    await this.sendTemplate(email, 'Booking Confirmation', 'booking-confirmation', bookingDetails);
   }
 }
