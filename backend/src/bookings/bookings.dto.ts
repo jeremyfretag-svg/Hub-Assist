@@ -13,8 +13,9 @@ export class CreateBookingDto {
   @IsDateString()
   endTime!: string;
 
+  @IsOptional()
   @IsNumber()
-  totalAmount!: number;
+  totalAmount?: number;
 
   @IsOptional()
   @SanitizeString()

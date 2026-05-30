@@ -38,11 +38,15 @@ export class BookingsService {
       throw new ConflictException('Workspace has overlapping bookings');
     }
 
+    const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+    const totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
+
     const booking = this.repo.create({
       ...dto,
       userId,
       startTime,
       endTime,
+      totalAmount,
       status: BookingStatus.PENDING,
     });
 

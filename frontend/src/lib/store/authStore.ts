@@ -72,29 +72,46 @@ export const useAuthStore = create<AuthStore>()(
         initializeAuth: () => {
           const { accessToken } = get();
           if (accessToken && !isTokenExpired(accessToken)) {
+            if (typeof document !== 'undefined') {
+              document.cookie = `token=${accessToken}; path=/; SameSite=Lax`;
+            }
             set({ isAuthenticated: true });
           } else {
+            if (typeof document !== 'undefined') {
+              document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+            }
             get().clearAuth();
           }
         },
 
-        login: ({ access_token, user }) =>
+        login: ({ access_token, user }) => {
+          if (typeof document !== 'undefined') {
+            document.cookie = `token=${access_token}; path=/; SameSite=Lax`;
+          }
           set({
             accessToken: access_token,
             token: access_token,
             isAuthenticated: true,
             ...(user ? { user } : {}),
-          }),
+          });
+        },
 
-        register: ({ access_token, user }) =>
+        register: ({ access_token, user }) => {
+          if (typeof document !== 'undefined') {
+            document.cookie = `token=${access_token}; path=/; SameSite=Lax`;
+          }
           set({
             accessToken: access_token,
             token: access_token,
             isAuthenticated: true,
             ...(user ? { user } : {}),
-          }),
+          });
+        },
 
         logout: () => {
+          if (typeof document !== 'undefined') {
+            document.cookie = 'token=; path=/; expires=Thu, 01 Jan 1970 00:00:00 GMT';
+          }
           get().clearAuth();
           if (typeof window !== 'undefined') window.location.href = '/login';
         },

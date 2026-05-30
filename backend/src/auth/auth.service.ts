@@ -98,7 +98,16 @@ export class AuthService {
       otpExpiry: undefined,
     });
 
-    return { message: 'Email verified successfully' };
+    const refreshToken = this.generateRefreshToken();
+    const refreshTokenHash = await this.hashRefreshToken(refreshToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await this.refreshTokenRepository.create(user.id, refreshTokenHash, expiresAt);
+
+    return {
+      access_token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      refresh_token: refreshToken,
+    };
   }
 
   async resendOtp(email: string) {
