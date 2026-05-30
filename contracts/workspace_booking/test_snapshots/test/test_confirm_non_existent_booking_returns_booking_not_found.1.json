@@ -274,18 +274,11 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": 999
-                }
-              ]
+              "u64": 999
             }
           }
         }
@@ -304,7 +297,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": {
@@ -365,13 +358,10 @@
                   "string": "contract try_call failed"
                 },
                 {
-                  "symbol": "confirm"
+                  "symbol": "confirm_booking"
                 },
                 {
                   "vec": [
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                    },
                     {
                       "u64": 999
                     }

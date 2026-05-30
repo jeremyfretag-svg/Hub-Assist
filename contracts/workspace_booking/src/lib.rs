@@ -151,8 +151,9 @@ impl WorkspaceBooking {
         Ok(id)
     }
 
-    pub fn confirm(env: Env, admin: Address, booking_id: u64) -> Result<(), ContractError> {
-        Self::require_admin(&env, &admin);
+    pub fn confirm_booking(env: Env, booking_id: u64) -> Result<(), ContractError> {
+        let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
+        admin.require_auth();
         let storage = env.storage().persistent();
         let mut booking: Booking = storage
             .get(&DataKey::Booking(booking_id))
@@ -166,7 +167,7 @@ impl WorkspaceBooking {
         storage.set(&DataKey::Booking(booking_id), &booking);
         storage.extend_ttl(&DataKey::Booking(booking_id), LEDGER_TTL, LEDGER_TTL);
 
-        env.events().publish((symbol_short!("confirm"),), booking_id);
+        env.events().publish((symbol_short!("confirm_b"),), booking_id);
         Ok(())
     }
 

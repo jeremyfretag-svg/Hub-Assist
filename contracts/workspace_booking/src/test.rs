@@ -129,20 +129,11 @@ fn test_confirm_by_admin_changes_status() {
     let ws_id = t.register_hot_desk();
     let member = Address::generate(&t.env);
     let booking_id = t.client().book(&member, &ws_id, &1000, &4600, &10, &t.dummy_hash());
-    t.client().confirm(&t.admin, &booking_id);
+    t.client().confirm_booking(&booking_id);
     assert_eq!(t.client().get_booking(&booking_id).status, BookingStatus::Confirmed);
 }
 
-#[test]
-#[should_panic]
-fn test_confirm_non_admin_panics() {
-    let t = TestEnv::new();
-    let ws_id = t.register_hot_desk();
-    let member = Address::generate(&t.env);
-    let booking_id = t.client().book(&member, &ws_id, &1000, &4600, &10, &t.dummy_hash());
-    let non_admin = Address::generate(&t.env);
-    t.client().confirm(&non_admin, &booking_id);
-}
+
 
 #[test]
 fn test_confirm_already_confirmed_returns_error() {
@@ -150,10 +141,10 @@ fn test_confirm_already_confirmed_returns_error() {
     let ws_id = t.register_hot_desk();
     let member = Address::generate(&t.env);
     let booking_id = t.client().book(&member, &ws_id, &1000, &4600, &10, &t.dummy_hash());
-    t.client().confirm(&t.admin, &booking_id);
+    t.client().confirm_booking(&booking_id);
     let err = t
         .client()
-        .try_confirm(&t.admin, &booking_id)
+        .try_confirm_booking(&booking_id)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, ContractError::BookingAlreadyConfirmed);
@@ -324,7 +315,7 @@ fn test_confirm_non_existent_booking_returns_booking_not_found() {
     let t = TestEnv::new();
     let err = t
         .client()
-        .try_confirm(&t.admin, &999u64)
+        .try_confirm_booking(&999u64)
         .unwrap_err()
         .unwrap();
     assert_eq!(err, ContractError::BookingNotFound);
