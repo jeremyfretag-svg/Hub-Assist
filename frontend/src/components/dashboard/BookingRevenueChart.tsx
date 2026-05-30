@@ -23,9 +23,13 @@ export function BookingRevenueChart() {
       </div>
       {isPending ? (
         <div className="h-48 animate-pulse rounded-2xl bg-[#EDE2D6]" />
-      ) : isError || !data?.length ? (
-        <p className="py-8 text-center text-sm text-[#6B6B6B]">No data available</p>
-      ) : (
+      ) : (() => {
+        if (isError) {
+          throw new Error("Failed to load booking revenue.");
+        }
+        return !data?.length ? (
+          <p className="py-8 text-center text-sm text-[#6B6B6B]">No data available</p>
+        ) : (
         <ResponsiveContainer width="100%" height={200}>
           <AreaChart data={data} margin={{ top: 4, right: 4, left: -20, bottom: 0 }}>
             <defs>

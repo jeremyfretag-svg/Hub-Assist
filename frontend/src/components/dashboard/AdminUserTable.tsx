@@ -31,7 +31,7 @@ export function AdminUserTable() {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [deleteUser, setDeleteUser] = useState<User | null>(null);
 
-  const { data, isLoading } = useQuery<UsersResponse>({
+  const { data, isLoading, isError } = useQuery<UsersResponse>({
     queryKey: ["users", currentPage, search, roleFilter],
     queryFn: () => api.getUsers({ page: currentPage, limit: 10, search: search || undefined, role: roleFilter || undefined }),
     enabled: !!token,
@@ -115,7 +115,19 @@ export function AdminUserTable() {
   }, [data?.users]);
 
   if (isLoading) {
-    return <div className="p-8 text-center">Loading users...</div>;
+    return (
+      <div className="space-y-4">
+        <div className="flex gap-4">
+          <div className="h-10 bg-[#EDE2D6] rounded-md flex-1 animate-pulse" />
+          <div className="h-10 w-32 bg-[#EDE2D6] rounded-md animate-pulse" />
+        </div>
+        <div className="h-96 bg-[#EDE2D6] rounded-lg animate-pulse mt-4" />
+      </div>
+    );
+  }
+
+  if (isError) {
+    throw new Error("Failed to load users table.");
   }
 
   return (
