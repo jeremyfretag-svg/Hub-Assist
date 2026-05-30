@@ -1,5 +1,12 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, Address, Env, String, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, contracterror, Address, Env, String, Vec};
+
+#[contracterror]
+#[derive(Copy, Clone, Debug, Eq, PartialEq, PartialOrd, Ord)]
+#[repr(u32)]
+pub enum HubError {
+    MemberAlreadyRegistered = 1,
+}
 
 #[contracttype]
 #[derive(Clone)]
@@ -74,17 +81,25 @@ impl HubAssistHub {
     }
 
     /// Register a member to a specific hub.
-    pub fn register_member(env: Env, caller: Address, hub_id: u32, role: String) {
+    pub fn register_member(env: Env, caller: Address, hub_id: u32, role: String) -> Result<(), HubError> {
         caller.require_auth();
         let mut members: Vec<Member> = env
             .storage()
             .instance()
             .get(&DataKey::HubMembers(hub_id))
             .unwrap_or(Vec::new(&env));
+
+        for i in 0..members.len() {
+            if members.get(i).unwrap().address == caller {
+                return Err(HubError::MemberAlreadyRegistered);
+            }
+        }
+
         members.push_back(Member { address: caller, role, active: true });
         env.storage()
             .instance()
             .set(&DataKey::HubMembers(hub_id), &members);
+        Ok(())
     }
 
     /// Return member count for a specific hub.
