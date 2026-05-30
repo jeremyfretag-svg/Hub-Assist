@@ -6,6 +6,7 @@ import { CreateBookingDto, UpdateBookingDto } from './bookings.dto';
 import { StellarService } from '../stellar/stellar.service';
 import { Workspace } from '../workspaces/workspace.entity';
 import { NotificationsService } from '../notifications/notifications.service';
+import { ConflictDetectionService } from './conflict-detection.service';
 
 @Injectable()
 export class BookingsService {
@@ -14,43 +15,47 @@ export class BookingsService {
     @InjectRepository(Workspace) private workspaceRepo: Repository<Workspace>,
     private stellarService: StellarService,
     private notificationsService: NotificationsService,
+    private conflictDetectionService: ConflictDetectionService,
   ) {}
 
   async create(userId: string, dto: CreateBookingDto) {
-    // Validate workspace exists
-    const workspace = await this.workspaceRepo.findOne({ where: { id: dto.workspaceId } });
-    if (!workspace) {
-      throw new NotFoundException('Workspace not found');
-    }
+    return this.repo.manager.transaction(async (manager) => {
+      const workspace = await manager.findOne(Workspace, { where: { id: dto.workspaceId } });
+      if (!workspace) {
+        throw new NotFoundException('Workspace not found');
+      }
 
-    const startTime = new Date(dto.startTime);
-    const endTime = new Date(dto.endTime);
+      const startTime = new Date(dto.startTime);
+      const endTime = new Date(dto.endTime);
 
-    // Validate no overlapping bookings with confirmed status
-    const overlapping = await this.repo
-      .createQueryBuilder('booking')
-      .where('booking.workspaceId = :workspaceId', { workspaceId: dto.workspaceId })
-      .andWhere('booking.status = :status', { status: BookingStatus.CONFIRMED })
-      .andWhere('booking.startTime < :endTime AND booking.endTime > :startTime', { startTime, endTime })
-      .getOne();
+      const conflict = await this.conflictDetectionService.hasConflict(
+        manager,
+        dto.workspaceId,
+        startTime,
+        endTime,
+      );
 
-    if (overlapping) {
-      throw new ConflictException('Workspace has overlapping bookings');
-    }
+      if (conflict) {
+        throw new ConflictException({
+          message: 'Workspace booking conflict detected',
+          conflictDetail: conflict,
+        });
+      }
 
-    const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-    const totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
+      const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+      const totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
 
-    const booking = this.repo.create({
-      ...dto,
-      userId,
-      startTime,
-      endTime,
-      totalAmount,
-      status: BookingStatus.PENDING,
+      const booking = manager.create(Booking, {
+        ...dto,
+        userId,
+        startTime,
+        endTime,
+        totalAmount,
+        status: BookingStatus.PENDING,
+      });
+
+      return manager.save(booking);
     });
-
-    return this.repo.save(booking);
   }
 
   async findAll(userId?: string, isAdmin: boolean = false) {
@@ -127,8 +132,42 @@ export class BookingsService {
   }
 
   async update(id: string, dto: UpdateBookingDto) {
-    const booking = await this.findById(id);
-    Object.assign(booking, dto);
-    return this.repo.save(booking);
+    return this.repo.manager.transaction(async (manager) => {
+      const booking = await manager.findOne(Booking, {
+        where: { id },
+        relations: ['workspace', 'user'],
+      });
+
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
+      }
+
+      const startTime = dto.startTime ? new Date(dto.startTime) : booking.startTime;
+      const endTime = dto.endTime ? new Date(dto.endTime) : booking.endTime;
+
+      if (dto.startTime || dto.endTime) {
+        const conflict = await this.conflictDetectionService.hasConflict(
+          manager,
+          booking.workspaceId,
+          startTime,
+          endTime,
+          id,
+        );
+
+        if (conflict) {
+          throw new ConflictException({
+            message: 'Workspace booking conflict detected',
+            conflictDetail: conflict,
+          });
+        }
+
+        const workspace = booking.workspace;
+        const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
+        booking.totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
+      }
+
+      Object.assign(booking, dto);
+      return manager.save(booking);
+    });
   }
 }
