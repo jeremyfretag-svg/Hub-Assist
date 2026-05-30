@@ -31,7 +31,7 @@ export class BookingsService {
       .createQueryBuilder('booking')
       .where('booking.workspaceId = :workspaceId', { workspaceId: dto.workspaceId })
       .andWhere('booking.status = :status', { status: BookingStatus.CONFIRMED })
-      .andWhere('booking.startTime < :endTime AND booking.endTime > :startTime', { startTime, endTime })
+      .andWhere('(booking.startTime BETWEEN :startTime AND :endTime OR booking.endTime BETWEEN :startTime AND :endTime OR :startTime BETWEEN booking.startTime AND booking.endTime)', { startTime, endTime })
       .getOne();
 
     if (overlapping) {

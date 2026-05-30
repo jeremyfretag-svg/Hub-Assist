@@ -5,6 +5,7 @@ import { BookingsService } from './bookings.service';
 import { Booking, BookingStatus } from './booking.entity';
 import { Workspace } from '../workspaces/workspace.entity';
 import { StellarService } from '../stellar/stellar.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true };
 
@@ -43,6 +44,10 @@ describe('BookingsService', () => {
     verifyTransaction: jest.fn(),
   };
 
+  const mockNotificationsService = {
+    sendToUser: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -50,6 +55,7 @@ describe('BookingsService', () => {
         { provide: getRepositoryToken(Booking), useValue: mockBookingRepo },
         { provide: getRepositoryToken(Workspace), useValue: mockWorkspaceRepo },
         { provide: StellarService, useValue: mockStellarService },
+        { provide: NotificationsService, useValue: mockNotificationsService },
       ],
     }).compile();
 
@@ -67,9 +73,15 @@ describe('BookingsService', () => {
       totalAmount: 20,
     };
 
+    const buildQbForCreate = (result: Booking | null) => ({
+      where: jest.fn().mockReturnThis(),
+      andWhere: jest.fn().mockReturnThis(),
+      getOne: jest.fn().mockResolvedValue(result),
+    });
+
     it('creates and returns a booking', async () => {
       mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
-      mockBookingRepo.findOne.mockResolvedValue(null);
+      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
       const created = mockBooking();
       mockBookingRepo.create.mockReturnValue(created);
       mockBookingRepo.save.mockResolvedValue(created);
@@ -87,9 +99,9 @@ describe('BookingsService', () => {
     it('throws 409 when overlapping confirmed booking exists', async () => {
       mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
       // Overlapping confirmed booking
-      mockBookingRepo.findOne.mockResolvedValue(
+      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(
         mockBooking({ status: BookingStatus.CONFIRMED, startTime: new Date('2025-01-01T08:00:00Z'), endTime: new Date('2025-01-01T10:00:00Z') }),
-      );
+      ));
 
       await expect(service.create('user-1', dto)).rejects.toThrow(ConflictException);
     });
@@ -97,9 +109,7 @@ describe('BookingsService', () => {
     it('does not throw when confirmed booking does not overlap', async () => {
       mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
       // Non-overlapping: ends before our start
-      mockBookingRepo.findOne.mockResolvedValue(
-        mockBooking({ status: BookingStatus.CONFIRMED, startTime: new Date('2025-01-01T06:00:00Z'), endTime: new Date('2025-01-01T08:00:00Z') }),
-      );
+      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
       const created = mockBooking();
       mockBookingRepo.create.mockReturnValue(created);
       mockBookingRepo.save.mockResolvedValue(created);

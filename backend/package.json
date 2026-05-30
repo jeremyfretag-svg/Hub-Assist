@@ -12,7 +12,8 @@
     "test:watch": "jest --config jest.config.ts --watch",
     "test:cov": "jest --config jest.config.ts --coverage",
     "test:e2e": "jest --config jest-e2e.config.ts",
-    "validate-env": "node scripts/validate-env.js"
+    "validate-env": "node scripts/validate-env.js",
+    "seed:bookings": "ts-node scripts/seed-bookings.ts"
   },
   "dependencies": {
     "@nestjs/cache-manager": "^3.1.2",
