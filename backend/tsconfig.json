@@ -23,5 +23,6 @@
     "strictBindCallApply": false,
     "forceConsistentCasingInFileNames": true,
     "noFallthroughCasesInSwitch": false
-  }
+  },
+  "exclude": ["node_modules", "dist", "jest.config.ts", "jest-e2e.config.ts"]
 }
