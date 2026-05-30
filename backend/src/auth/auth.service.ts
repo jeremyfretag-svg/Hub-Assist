@@ -7,6 +7,7 @@ import { EmailService } from './email.service';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class AuthService {
@@ -17,6 +18,7 @@ export class AuthService {
     private refreshTokenRepository: RefreshTokenRepository,
     private forgotPasswordProvider: ForgotPasswordProvider,
     private resetPasswordProvider: ResetPasswordProvider,
+    private notificationsService: NotificationsService,
   ) {}
 
   private generateOtp(): string {
@@ -65,6 +67,9 @@ export class AuthService {
       console.error('Failed to send OTP email:', err);
     });
 
+    // Notify admins of new member registration
+    this.notificationsService.sendToAll('member:registered', { email, userId: user.id });
+
     return { message: 'User registered. Check your email for OTP.' };
   }
 
@@ -93,7 +98,16 @@ export class AuthService {
       otpExpiry: undefined,
     });
 
-    return { message: 'Email verified successfully' };
+    const refreshToken = this.generateRefreshToken();
+    const refreshTokenHash = await this.hashRefreshToken(refreshToken);
+    const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+
+    await this.refreshTokenRepository.create(user.id, refreshTokenHash, expiresAt);
+
+    return {
+      access_token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      refresh_token: refreshToken,
+    };
   }
 
   async resendOtp(email: string) {

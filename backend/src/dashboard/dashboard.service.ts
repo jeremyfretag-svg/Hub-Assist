@@ -43,7 +43,8 @@ export class DashboardService {
     });
 
     return recentBookings.map((booking) => ({
-      type: 'booking',
+      id: booking.id,
+      icon: '📅',
       description: `${booking.user.email} booked ${booking.workspace.name}`,
       timestamp: booking.createdAt,
     }));

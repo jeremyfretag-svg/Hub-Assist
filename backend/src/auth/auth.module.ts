@@ -16,11 +16,13 @@ import { RefreshTokenRepository } from './refresh-token.repository';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { User } from '../users/user.entity';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
+    NotificationsModule,
     TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

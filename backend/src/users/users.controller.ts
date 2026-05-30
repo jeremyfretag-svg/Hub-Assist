@@ -11,8 +11,12 @@ import {
   UseGuards,
   UseInterceptors,
   Req,
+  Inject,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
+import { memoryStorage } from 'multer';
+import { CacheInterceptor, CacheKey, CacheTTL, CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import {
   ApiTags,
   ApiOperation,
@@ -37,8 +41,12 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly cloudinaryService: CloudinaryService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
+  private userCacheKey(id: string) {
+    return `user:${id}`;
+  }
   @Get()
   @Roles(UserRole.ADMIN)
   @ApiOperation({ summary: 'Get all users (admin only, paginated)' })
@@ -68,6 +76,9 @@ export class UsersController {
   }
 
   @Get(':id')
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey('user')
+  @CacheTTL(600) // 10 minutes
   @ApiOperation({ summary: 'Get user by ID' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User retrieved successfully' })
@@ -79,8 +90,10 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User updated successfully' })
-  update(@Param('id') id: string, @Body() data: any) {
-    return this.usersService.update(id, data);
+  async update(@Param('id') id: string, @Body() data: any) {
+    const result = await this.usersService.update(id, data);
+    await this.cacheManager.del(this.userCacheKey(id));
+    return result;
   }
 
   @Patch(':id/role')
@@ -88,16 +101,20 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user role (admin only)' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
-  updateRole(@Param('id') id: string, @Body('role') role: UserRole) {
-    return this.usersService.update(id, { role });
+  async updateRole(@Param('id') id: string, @Body('role') role: UserRole) {
+    const result = await this.usersService.update(id, { role });
+    await this.cacheManager.del(this.userCacheKey(id));
+    return result;
   }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete user (soft delete)' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User deleted successfully' })
-  delete(@Param('id') id: string) {
-    return this.usersService.delete(id);
+  async delete(@Param('id') id: string) {
+    const result = await this.usersService.delete(id);
+    await this.cacheManager.del(this.userCacheKey(id));
+    return result;
   }
 
   @Patch(':id/activate')
@@ -117,7 +134,12 @@ export class UsersController {
   }
 
   @Post(':id/profile-picture')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(
+    FileInterceptor('file', {
+      storage: memoryStorage(),
+      limits: { fileSize: 5 * 1024 * 1024 },
+    }),
+  )
   @ApiOperation({ summary: 'Upload profile picture' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'Profile picture uploaded successfully' })
@@ -126,6 +148,8 @@ export class UsersController {
     @UploadedFile(FileValidationPipe) file: Express.Multer.File,
   ) {
     const url = await this.cloudinaryService.uploadImage(file);
-    return this.usersService.updateProfilePicture(id, url);
+    const result = await this.usersService.updateProfilePicture(id, url);
+    await this.cacheManager.del(this.userCacheKey(id));
+    return result;
   }
 }

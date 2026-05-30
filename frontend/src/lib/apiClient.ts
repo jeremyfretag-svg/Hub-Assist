@@ -129,7 +129,7 @@ export const api = {
     post<{ message: string }>('/auth/reset-password', { email, otp, newPassword }),
 
   verifyOtp: (email: string, otp: string) =>
-    post<{ access_token: string }>('/auth/verify-otp', { email, otp }),
+    post<{ access_token: string; refresh_token: string }>('/auth/verify-otp', { email, otp }),
 
   resendOtp: (email: string) =>
     post<{ message: string }>('/auth/resend-otp', { email }),

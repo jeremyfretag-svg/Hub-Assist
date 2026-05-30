@@ -19,4 +19,5 @@ export const validationSchema = Joi.object({
   WORKSPACE_BOOKING_CONTRACT_ID: Joi.string().optional(),
   MEMBERSHIP_TOKEN_CONTRACT_ID: Joi.string().optional(),
   FRONTEND_URL: Joi.string().default('http://localhost:3000'),
+  REDIS_URL: Joi.string().optional(),
 });

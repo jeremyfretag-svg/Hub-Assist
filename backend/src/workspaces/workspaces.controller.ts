@@ -8,6 +8,8 @@ import {
   Param,
   Query,
   UseGuards,
+  UseInterceptors,
+  Inject,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -17,26 +19,42 @@ import {
   ApiParam,
   ApiQuery,
 } from '@nestjs/swagger';
+import { CacheInterceptor, CacheKey, CacheTTL, CACHE_MANAGER } from '@nestjs/cache-manager';
+import { Cache } from 'cache-manager';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WorkspacesService } from './workspaces.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 import { WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 
+const WORKSPACES_CACHE_KEY = 'workspaces';
+
 @ApiTags('workspaces')
 @Controller({ version: '1', path: 'workspaces' })
 export class WorkspacesController {
-  constructor(private service: WorkspacesService) {}
+  constructor(
+    private service: WorkspacesService,
+    @Inject(CACHE_MANAGER) private cacheManager: Cache,
+  ) {}
+
+  private async invalidateWorkspacesCache() {
+    await this.cacheManager.del(WORKSPACES_CACHE_KEY);
+  }
 
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Create a new workspace' })
   @ApiResponse({ status: 201, description: 'Workspace created successfully' })
-  create(@Body() dto: CreateWorkspaceDto) {
-    return this.service.create(dto);
+  async create(@Body() dto: CreateWorkspaceDto) {
+    const result = await this.service.create(dto);
+    await this.invalidateWorkspacesCache();
+    return result;
   }
 
   @Get()
+  @UseInterceptors(CacheInterceptor)
+  @CacheKey(WORKSPACES_CACHE_KEY)
+  @CacheTTL(300) // 5 minutes
   @ApiOperation({ summary: 'Get all workspaces (paginated and filterable)' })
   @ApiQuery({ name: 'page', type: Number, required: false, example: 1 })
   @ApiQuery({ name: 'limit', type: Number, required: false, example: 10 })
@@ -66,8 +84,10 @@ export class WorkspacesController {
   @ApiOperation({ summary: 'Update workspace' })
   @ApiParam({ name: 'id', type: String, description: 'Workspace ID' })
   @ApiResponse({ status: 200, description: 'Workspace updated successfully' })
-  update(@Param('id') id: string, @Body() dto: UpdateWorkspaceDto) {
-    return this.service.update(id, dto);
+  async update(@Param('id') id: string, @Body() dto: UpdateWorkspaceDto) {
+    const result = await this.service.update(id, dto);
+    await this.invalidateWorkspacesCache();
+    return result;
   }
 
   @Delete(':id')
@@ -76,7 +96,9 @@ export class WorkspacesController {
   @ApiOperation({ summary: 'Delete workspace (soft delete)' })
   @ApiParam({ name: 'id', type: String, description: 'Workspace ID' })
   @ApiResponse({ status: 200, description: 'Workspace deleted successfully' })
-  delete(@Param('id') id: string) {
-    return this.service.softDelete(id);
+  async delete(@Param('id') id: string) {
+    const result = await this.service.softDelete(id);
+    await this.invalidateWorkspacesCache();
+    return result;
   }
 }
