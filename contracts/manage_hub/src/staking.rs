@@ -3,6 +3,9 @@ use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, token, Add
 // ── TTL constant (~30 days at ~5s/ledger) ─────────────────────────────────
 const STAKE_TTL_LEDGERS: u32 = 30 * 17_280;
 
+// Precision factor to reduce reward truncation from sequential integer division
+const REWARD_PRECISION: i128 = 1_000_000;
+
 // ── Storage keys ──────────────────────────────────────────────────────────
 #[contracttype]
 #[derive(Clone)]
@@ -271,7 +274,9 @@ impl StakingModule {
             * tier.base_rate_bps as i128
             * tier.reward_multiplier_bps as i128
             * elapsed
+            * REWARD_PRECISION
             / year_secs
             / 100_000_000 // 10_000 * 10_000
+            / REWARD_PRECISION
     }
 }

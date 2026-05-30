@@ -202,8 +202,10 @@ impl WorkspaceBooking {
         let count: u32 = storage.get(&DataKey::WorkspaceCount).unwrap_or(0);
         let mut result = vec![&env];
         for i in 1..=count {
-            if let Some(w) = storage.get(&DataKey::Workspace(i)) {
-                result.push_back(w);
+            if let Some(w) = storage.get::<DataKey, Workspace>(&DataKey::Workspace(i)) {
+                if w.availability == WorkspaceAvailability::Available {
+                    result.push_back(w);
+                }
             }
         }
         result
