@@ -201,6 +201,38 @@ describe('Bookings (e2e)', () => {
         totalAmount: 150,
       }).expect(409);
     });
+
+    it('should handle concurrent booking creation race condition without double-booking', async () => {
+      const workspaceRepo = connection.getRepository(Workspace);
+      const singleWorkspace = workspaceRepo.create({
+        name: 'Single Capacity Workspace',
+        type: WorkspaceType.PRIVATE_OFFICE,
+        capacity: 1,
+        pricePerHour: 50,
+        availability: WorkspaceAvailability.AVAILABLE,
+      });
+      await workspaceRepo.save(singleWorkspace);
+
+      const startTime = new Date(Date.now() + 86400000 * 5).toISOString();
+      const endTime = new Date(Date.now() + 86400000 * 6).toISOString();
+
+      const requests = Array.from({ length: 5 }).map(() =>
+        createBooking(authTokenMember, {
+          workspaceId: singleWorkspace.id,
+          startTime,
+          endTime,
+          totalAmount: 50,
+        })
+      );
+
+      const responses = await Promise.all(requests);
+
+      const successCount = responses.filter(r => r.status === 201).length;
+      const conflictCount = responses.filter(r => r.status === 409).length;
+
+      expect(successCount).toBe(1);
+      expect(conflictCount).toBe(4);
+    });
   });
 
   describe('GET /api/bookings', () => {
