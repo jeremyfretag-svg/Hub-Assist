@@ -2,19 +2,22 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe, VersioningType } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
-import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
+import { Logger } from 'nestjs-pino';
 import helmet from 'helmet';
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const compression = require('compression');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './utils/error';
 import { TransformInterceptor } from './common/interceptors/transform.interceptor';
-import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule, { bufferLogs: true });
+  const app = await NestFactory.create(AppModule, {
+    // Buffer logs until the Pino logger is ready
+    bufferLogs: true,
+  });
 
-  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER));
+  // Replace NestJS default logger with Pino structured JSON logger
+  app.useLogger(app.get(Logger));
 
   const configService = app.get(ConfigService);
 
@@ -41,24 +44,25 @@ async function bootstrap() {
   // Global exception filter
   app.useGlobalFilters(new HttpExceptionFilter());
 
-  // Global interceptors
-  app.useGlobalInterceptors(new LoggingInterceptor(), new TransformInterceptor());
+  // TransformInterceptor wraps all responses in { success, data, timestamp }
+  // LoggingInterceptor is registered as APP_INTERCEPTOR in AppModule (needs DI)
+  app.useGlobalInterceptors(new TransformInterceptor());
 
   // Swagger
   const config = new DocumentBuilder()
     .setTitle('HubAssist API')
     .setDescription(
       'A comprehensive coworking and workspace management system powered by Stellar.\n\n' +
-      '## Response Format\n\n' +
-      'All successful responses are wrapped in a consistent envelope:\n\n' +
-      '```json\n' +
-      '{\n' +
-      '  "success": true,\n' +
-      '  "data": <payload>,\n' +
-      '  "timestamp": "2026-05-27T16:00:00.000Z"\n' +
-      '}\n' +
-      '```\n\n' +
-      'Error responses retain their original shape (statusCode, message, error, timestamp, path).',
+        '## Response Format\n\n' +
+        'All successful responses are wrapped in a consistent envelope:\n\n' +
+        '```json\n' +
+        '{\n' +
+        '  "success": true,\n' +
+        '  "data": <payload>,\n' +
+        '  "timestamp": "2026-05-27T16:00:00.000Z"\n' +
+        '}\n' +
+        '```\n\n' +
+        'Error responses retain their original shape (statusCode, message, error, timestamp, path).',
     )
     .setVersion('1.0.0')
     .addServer('/api/v1', 'Version 1')
@@ -68,7 +72,7 @@ async function bootstrap() {
   SwaggerModule.setup('api/docs', app, SwaggerModule.createDocument(app, config));
 
   await app.listen(3001);
-  console.log('HubAssist API running on http://localhost:3001');
-  console.log('Swagger UI available at http://localhost:3001/api/docs');
+  app.get(Logger).log('HubAssist API running on http://localhost:3001');
+  app.get(Logger).log('Swagger UI available at http://localhost:3001/api/docs');
 }
 bootstrap();
