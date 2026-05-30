@@ -54,6 +54,38 @@ export class Booking {
   @Column({ nullable: true })
   hubId?: string;
 
+  // ── Recurring booking fields ──────────────────────────────────────────────
+
+  /**
+   * RFC 5545 RRULE string (e.g. "FREQ=WEEKLY;COUNT=4").
+   * Only set on the first instance of a series; null for one-off bookings.
+   */
+  @Column({ nullable: true, type: 'text' })
+  recurrenceRule?: string;
+
+  /**
+   * UUID shared by all instances of the same recurring series.
+   * Null for one-off bookings.
+   */
+  @Column({ nullable: true, type: 'uuid' })
+  seriesId?: string;
+
+  /**
+   * 0-based position of this instance within its series.
+   * Null for one-off bookings.
+   */
+  @Column({ nullable: true, type: 'int' })
+  instanceIndex?: number;
+
+  // ── Cancellation policy fields ────────────────────────────────────────────
+
+  /**
+   * Amount refunded when the booking was cancelled.
+   * Null until the booking is cancelled.
+   */
+  @Column({ nullable: true, type: 'decimal', precision: 10, scale: 2 })
+  refundAmount?: number;
+
   @CreateDateColumn()
   createdAt!: Date;
 

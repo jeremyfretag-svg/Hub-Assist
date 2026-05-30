@@ -1,14 +1,27 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { getRepositoryToken } from '@nestjs/typeorm';
-import { NotFoundException, ConflictException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  NotFoundException,
+  ConflictException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { BookingsService } from './bookings.service';
 import { Booking, BookingStatus } from './booking.entity';
-import { Workspace } from '../workspaces/workspace.entity';
+import { Workspace, WorkspaceType } from '../workspaces/workspace.entity';
 import { StellarService } from '../stellar/stellar.service';
 import { ConflictDetectionService } from './conflict-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { RecurrenceService } from './recurrence.service';
+import { CancellationPolicyService } from './cancellation-policy.service';
 
-const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true };
+const mockWorkspace = {
+  id: 'ws-1',
+  name: 'Hot Desk',
+  isActive: true,
+  pricePerHour: 10,
+  type: WorkspaceType.HOT_DESK,
+};
 
 const mockBooking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'booking-1',
@@ -62,6 +75,14 @@ describe('BookingsService', () => {
     hasConflict: jest.fn(),
   };
 
+  const mockRecurrenceService = {
+    expandInstances: jest.fn(),
+  };
+
+  const mockCancellationPolicyService = {
+    evaluateRefund: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -71,6 +92,8 @@ describe('BookingsService', () => {
         { provide: StellarService, useValue: mockStellarService },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: ConflictDetectionService, useValue: mockConflictDetectionService },
+        { provide: RecurrenceService, useValue: mockRecurrenceService },
+        { provide: CancellationPolicyService, useValue: mockCancellationPolicyService },
       ],
     }).compile();
 
@@ -78,9 +101,9 @@ describe('BookingsService', () => {
     jest.clearAllMocks();
   });
 
-  // ── create ─────────────────────────────────────────────────────────────────
+  // ── create (single booking) ────────────────────────────────────────────────
 
-  describe('create', () => {
+  describe('create (single booking)', () => {
     const dto = {
       workspaceId: 'ws-1',
       startTime: '2025-01-01T09:00:00Z',
@@ -88,15 +111,7 @@ describe('BookingsService', () => {
       totalAmount: 20,
     };
 
-    const buildQbForCreate = (result: Booking | null) => ({
-      where: jest.fn().mockReturnThis(),
-      andWhere: jest.fn().mockReturnThis(),
-      getOne: jest.fn().mockResolvedValue(result),
-    });
-
     it('creates and returns a booking', async () => {
-      mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
-      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
       mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
       mockConflictDetectionService.hasConflict.mockResolvedValue(null);
       const created = mockBooking();
@@ -115,33 +130,136 @@ describe('BookingsService', () => {
 
     it('throws 409 when overlapping confirmed booking exists', async () => {
       mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
-      // Overlapping confirmed booking
-      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(
-        mockBooking({ status: BookingStatus.CONFIRMED, startTime: new Date('2025-01-01T08:00:00Z'), endTime: new Date('2025-01-01T10:00:00Z') }),
-      ));
-      mockConflictDetectionService.hasConflict.mockResolvedValue({ reason: 'Overlap' });
+      mockConflictDetectionService.hasConflict.mockResolvedValue({ reason: 'Capacity Exceeded' });
 
       await expect(service.create('user-1', dto)).rejects.toThrow(ConflictException);
     });
 
-    it('does not throw when confirmed booking does not overlap', async () => {
-      mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
-      // Non-overlapping: ends before our start
-      mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
+    it('throws 400 when endTime is before startTime', async () => {
       mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
-      // Non-overlapping
-      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
-      const created = mockBooking();
-      mockManager.create.mockReturnValue(created);
-      mockManager.save.mockResolvedValue(created);
+      await expect(
+        service.create('user-1', {
+          ...dto,
+          startTime: '2025-01-01T11:00:00Z',
+          endTime: '2025-01-01T09:00:00Z',
+        }),
+      ).rejects.toThrow(BadRequestException);
+    });
+  });
 
-      await expect(service.create('user-1', dto)).resolves.toEqual(created);
+  // ── create (recurring series) ──────────────────────────────────────────────
+
+  describe('create (recurring series)', () => {
+    const recurringDto = {
+      workspaceId: 'ws-1',
+      startTime: '2025-01-06T09:00:00Z',
+      endTime: '2025-01-06T10:00:00Z',
+      recurrenceRule: 'FREQ=WEEKLY;COUNT=4',
+    };
+
+    const fourInstances = [
+      { startTime: new Date('2025-01-06T09:00:00Z'), endTime: new Date('2025-01-06T10:00:00Z') },
+      { startTime: new Date('2025-01-13T09:00:00Z'), endTime: new Date('2025-01-13T10:00:00Z') },
+      { startTime: new Date('2025-01-20T09:00:00Z'), endTime: new Date('2025-01-20T10:00:00Z') },
+      { startTime: new Date('2025-01-27T09:00:00Z'), endTime: new Date('2025-01-27T10:00:00Z') },
+    ];
+
+    it('creates all 4 instances when no conflicts exist', async () => {
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockRecurrenceService.expandInstances.mockReturnValue(fourInstances);
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
+
+      const savedBookings = fourInstances.map((inst, i) =>
+        mockBooking({ ...inst, instanceIndex: i, seriesId: 'series-uuid' }),
+      );
+      mockManager.create.mockImplementation((_, data) => ({ ...data }));
+      mockManager.save.mockResolvedValue(savedBookings);
+
+      const result = await service.create('user-1', recurringDto);
+
+      expect(Array.isArray(result)).toBe(true);
+      expect(mockConflictDetectionService.hasConflict).toHaveBeenCalledTimes(4);
+      expect(mockManager.save).toHaveBeenCalledTimes(1); // batch insert
+    });
+
+    it('rejects the entire series when a single instance conflicts (atomic)', async () => {
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockRecurrenceService.expandInstances.mockReturnValue(fourInstances);
+
+      // 3rd instance conflicts
+      mockConflictDetectionService.hasConflict
+        .mockResolvedValueOnce(null)   // instance 0 — ok
+        .mockResolvedValueOnce(null)   // instance 1 — ok
+        .mockResolvedValueOnce({ reason: 'Capacity Exceeded' }) // instance 2 — conflict
+        .mockResolvedValueOnce(null);  // instance 3 — would be ok
+
+      await expect(service.create('user-1', recurringDto)).rejects.toThrow(
+        ConflictException,
+      );
+
+      // No bookings should have been saved
+      expect(mockManager.save).not.toHaveBeenCalled();
+    });
+
+    it('assigns the same seriesId to all instances', async () => {
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockRecurrenceService.expandInstances.mockReturnValue(fourInstances);
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
+
+      const createdBookings: any[] = [];
+      mockManager.create.mockImplementation((_, data) => {
+        createdBookings.push(data);
+        return data;
+      });
+      mockManager.save.mockResolvedValue(createdBookings);
+
+      await service.create('user-1', recurringDto);
+
+      const seriesIds = createdBookings.map((b) => b.seriesId);
+      expect(new Set(seriesIds).size).toBe(1); // all same seriesId
+    });
+
+    it('sets instanceIndex sequentially starting from 0', async () => {
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockRecurrenceService.expandInstances.mockReturnValue(fourInstances);
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
+
+      const createdBookings: any[] = [];
+      mockManager.create.mockImplementation((_, data) => {
+        createdBookings.push(data);
+        return data;
+      });
+      mockManager.save.mockResolvedValue(createdBookings);
+
+      await service.create('user-1', recurringDto);
+
+      expect(createdBookings.map((b) => b.instanceIndex)).toEqual([0, 1, 2, 3]);
+    });
+
+    it('only sets recurrenceRule on the first instance', async () => {
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockRecurrenceService.expandInstances.mockReturnValue(fourInstances);
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
+
+      const createdBookings: any[] = [];
+      mockManager.create.mockImplementation((_, data) => {
+        createdBookings.push(data);
+        return data;
+      });
+      mockManager.save.mockResolvedValue(createdBookings);
+
+      await service.create('user-1', recurringDto);
+
+      expect(createdBookings[0].recurrenceRule).toBe('FREQ=WEEKLY;COUNT=4');
+      expect(createdBookings[1].recurrenceRule).toBeUndefined();
+      expect(createdBookings[2].recurrenceRule).toBeUndefined();
+      expect(createdBookings[3].recurrenceRule).toBeUndefined();
     });
   });
 
   // ── findAll ────────────────────────────────────────────────────────────────
 
-  describe('findAll (getUserBookings / getAdminBookings)', () => {
+  describe('findAll', () => {
     const buildQb = (results: Booking[]) => ({
       leftJoinAndSelect: jest.fn().mockReturnThis(),
       where: jest.fn().mockReturnThis(),
@@ -159,7 +277,10 @@ describe('BookingsService', () => {
     });
 
     it('returns all bookings when admin', async () => {
-      const allBookings = [mockBooking({ userId: 'user-1' }), mockBooking({ id: 'booking-2', userId: 'user-2' })];
+      const allBookings = [
+        mockBooking({ userId: 'user-1' }),
+        mockBooking({ id: 'booking-2', userId: 'user-2' }),
+      ];
       const qb = buildQb(allBookings);
       mockBookingRepo.createQueryBuilder.mockReturnValue(qb);
 
@@ -188,42 +309,177 @@ describe('BookingsService', () => {
     });
 
     it('throws 400 when booking is not pending', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ status: BookingStatus.CONFIRMED }));
+      mockBookingRepo.findOne.mockResolvedValue(
+        mockBooking({ status: BookingStatus.CONFIRMED }),
+      );
       await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
     });
 
     it('throws 400 when no stellarTxHash provided', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ stellarTxHash: null as any }));
+      mockBookingRepo.findOne.mockResolvedValue(
+        mockBooking({ stellarTxHash: null as any }),
+      );
       await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
     });
 
     it('throws 400 when stellar transaction verification fails', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ stellarTxHash: 'tx-hash-123' }));
+      mockBookingRepo.findOne.mockResolvedValue(
+        mockBooking({ stellarTxHash: 'tx-hash-123' }),
+      );
       mockStellarService.verifyTransaction.mockResolvedValue({ status: 'FAILED' });
       await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
     });
   });
 
-  // ── cancel ─────────────────────────────────────────────────────────────────
+  // ── cancel (single booking) ────────────────────────────────────────────────
 
   describe('cancel', () => {
-    it('allows owner to cancel own booking', async () => {
+    it('allows owner to cancel own booking and stores refundAmount', async () => {
       const booking = mockBooking();
       mockBookingRepo.findOne.mockResolvedValue(booking);
-      mockBookingRepo.save.mockResolvedValue({ ...booking, status: BookingStatus.CANCELLED });
+      mockCancellationPolicyService.evaluateRefund.mockResolvedValue({
+        refundAmount: 20,
+        refundPercent: 100,
+        reason: 'Full refund',
+      });
+      mockBookingRepo.save.mockResolvedValue({
+        ...booking,
+        status: BookingStatus.CANCELLED,
+        refundAmount: 20,
+      });
 
       const result = await service.cancel('booking-1', 'user-1');
       expect(result.status).toBe(BookingStatus.CANCELLED);
+      expect(result.refundAmount).toBe(20);
+    });
+
+    it('stores refundAmount = 0 when no refund applies', async () => {
+      const booking = mockBooking();
+      mockBookingRepo.findOne.mockResolvedValue(booking);
+      mockCancellationPolicyService.evaluateRefund.mockResolvedValue({
+        refundAmount: 0,
+        refundPercent: 0,
+        reason: 'No refund',
+      });
+      mockBookingRepo.save.mockResolvedValue({
+        ...booking,
+        status: BookingStatus.CANCELLED,
+        refundAmount: 0,
+      });
+
+      const result = await service.cancel('booking-1', 'user-1');
+      expect(result.refundAmount).toBe(0);
     });
 
     it('throws 403 when non-owner tries to cancel', async () => {
       mockBookingRepo.findOne.mockResolvedValue(mockBooking({ userId: 'user-1' }));
-      await expect(service.cancel('booking-1', 'other-user')).rejects.toThrow(ForbiddenException);
+      await expect(service.cancel('booking-1', 'other-user')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
 
     it('throws 404 when booking not found', async () => {
       mockBookingRepo.findOne.mockResolvedValue(null);
-      await expect(service.cancel('unknown', 'user-1')).rejects.toThrow(NotFoundException);
+      await expect(service.cancel('unknown', 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+  });
+
+  // ── cancelSeries ───────────────────────────────────────────────────────────
+
+  describe('cancelSeries', () => {
+    const now = new Date();
+    const past = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);   // 1 week ago
+    const future1 = new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000); // 1 week from now
+    const future2 = new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000); // 2 weeks from now
+
+    const seriesId = 'series-uuid';
+
+    const pastInstance = mockBooking({
+      id: 'b-past',
+      startTime: past,
+      endTime: new Date(past.getTime() + 3600000),
+      seriesId,
+      instanceIndex: 0,
+      status: BookingStatus.CONFIRMED,
+    });
+
+    const futureInstance1 = mockBooking({
+      id: 'b-future-1',
+      startTime: future1,
+      endTime: new Date(future1.getTime() + 3600000),
+      seriesId,
+      instanceIndex: 1,
+      status: BookingStatus.PENDING,
+    });
+
+    const futureInstance2 = mockBooking({
+      id: 'b-future-2',
+      startTime: future2,
+      endTime: new Date(future2.getTime() + 3600000),
+      seriesId,
+      instanceIndex: 2,
+      status: BookingStatus.PENDING,
+    });
+
+    it('cancels future instances and preserves past instances', async () => {
+      mockBookingRepo.find
+        .mockResolvedValueOnce([pastInstance, futureInstance1, futureInstance2]) // all instances
+        .mockResolvedValueOnce({ ...futureInstance1, workspace: mockWorkspace }) // findOne for future1
+        .mockResolvedValueOnce({ ...futureInstance2, workspace: mockWorkspace }); // findOne for future2
+
+      mockBookingRepo.findOne
+        .mockResolvedValueOnce({ ...futureInstance1, workspace: mockWorkspace })
+        .mockResolvedValueOnce({ ...futureInstance2, workspace: mockWorkspace });
+
+      mockCancellationPolicyService.evaluateRefund.mockResolvedValue({
+        refundAmount: 10,
+        refundPercent: 100,
+        reason: 'Full refund',
+      });
+
+      mockBookingRepo.save.mockResolvedValue([]);
+
+      const result = await service.cancelSeries(seriesId, 'user-1');
+
+      expect(result.cancelledCount).toBe(2);
+      expect(result.preservedCount).toBe(1);
+    });
+
+    it('preserves already-cancelled future instances', async () => {
+      const alreadyCancelled = mockBooking({
+        id: 'b-already-cancelled',
+        startTime: future1,
+        endTime: new Date(future1.getTime() + 3600000),
+        seriesId,
+        instanceIndex: 1,
+        status: BookingStatus.CANCELLED,
+      });
+
+      mockBookingRepo.find.mockResolvedValueOnce([pastInstance, alreadyCancelled]);
+      mockBookingRepo.save.mockResolvedValue([]);
+
+      const result = await service.cancelSeries(seriesId, 'user-1');
+
+      // alreadyCancelled is future but already CANCELLED — not re-cancelled
+      expect(result.cancelledCount).toBe(0);
+    });
+
+    it('throws 404 when series does not exist', async () => {
+      mockBookingRepo.find.mockResolvedValueOnce([]);
+      await expect(service.cancelSeries('nonexistent', 'user-1')).rejects.toThrow(
+        NotFoundException,
+      );
+    });
+
+    it('throws 403 when non-owner tries to cancel series', async () => {
+      mockBookingRepo.find.mockResolvedValueOnce([
+        mockBooking({ seriesId, userId: 'user-1' }),
+      ]);
+      await expect(service.cancelSeries(seriesId, 'other-user')).rejects.toThrow(
+        ForbiddenException,
+      );
     });
   });
 });
