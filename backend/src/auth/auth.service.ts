@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, BadRequestException, TooManyRequestsException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
 import { randomBytes, randomUUID } from 'crypto';
@@ -8,6 +8,7 @@ import { RefreshTokenRepository } from './refresh-token.repository';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OtpRateLimitService, OTP_MAX_ATTEMPTS, OTP_RESEND_LIMIT } from './otp-rate-limit.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private forgotPasswordProvider: ForgotPasswordProvider,
     private resetPasswordProvider: ResetPasswordProvider,
     private notificationsService: NotificationsService,
+    private otpRateLimitService: OtpRateLimitService,
   ) {}
 
   private generateOtp(): string {
@@ -83,20 +85,57 @@ export class AuthService {
       throw new BadRequestException('No OTP found for this user');
     }
 
+    // Reject if the OTP was already invalidated by too many wrong guesses
+    if (user.otpInvalidatedAt) {
+      throw new BadRequestException({
+        message: 'OTP has been invalidated due to too many wrong attempts. Please request a new OTP.',
+        attemptsRemaining: 0,
+      });
+    }
+
     if (new Date() > user.otpExpiry) {
       throw new BadRequestException('OTP has expired');
     }
 
     const isValid = await this.verifyOtpHash(otp, user.otp);
+
     if (!isValid) {
-      throw new BadRequestException('Invalid OTP');
+      const newAttempts = (user.otpAttempts ?? 0) + 1;
+      const attemptsRemaining = Math.max(0, OTP_MAX_ATTEMPTS - newAttempts);
+
+      if (newAttempts >= OTP_MAX_ATTEMPTS) {
+        // Invalidate the OTP — brute-force threshold reached
+        await this.usersService.update(user.id, {
+          otpAttempts: newAttempts,
+          otpInvalidatedAt: new Date(),
+        });
+        throw new BadRequestException({
+          message: 'OTP has been invalidated due to too many wrong attempts. Please request a new OTP.',
+          attemptsRemaining: 0,
+        });
+      }
+
+      // Record the failed attempt
+      await this.usersService.update(user.id, { otpAttempts: newAttempts });
+
+      throw new BadRequestException({
+        message: 'Invalid OTP',
+        attemptsRemaining,
+      });
     }
 
+    // Successful verification — clear all OTP state
     await this.usersService.update(user.id, {
       isVerified: true,
       otp: undefined,
       otpExpiry: undefined,
+      otpAttempts: 0,
+      otpInvalidatedAt: undefined,
+      otpResendCount: 0,
     });
+
+    // Clear the Redis sliding window for this user
+    await this.otpRateLimitService.clearResendWindow(email);
 
     const refreshToken = this.generateRefreshToken();
     const refreshTokenHash = await this.hashRefreshToken(refreshToken);
@@ -116,11 +155,26 @@ export class AuthService {
       throw new BadRequestException('User not found');
     }
 
-    // Rate limit: only resend if previous OTP is expired or doesn't exist
-    if (user.otp && user.otpExpiry && new Date() < user.otpExpiry) {
-      throw new BadRequestException('OTP already sent. Please wait before requesting a new one.');
+    // ── Sliding-window rate limit (Redis primary, DB fallback) ──────────────
+    const rateLimitResult = await this.otpRateLimitService.checkAndRecordResend(email);
+
+    if (!rateLimitResult.allowed) {
+      throw new TooManyRequestsException({
+        message: `Too many OTP resend requests. Please wait ${rateLimitResult.retryAfterSeconds} seconds before trying again.`,
+        retryAfterSeconds: rateLimitResult.retryAfterSeconds,
+      });
     }
 
+    // DB-level fallback: if Redis was unavailable, enforce via DB counter
+    // (OTP_RESEND_LIMIT resends tracked by otpResendCount, reset on successful verify)
+    if (rateLimitResult.redisUnavailable && user.otpResendCount >= OTP_RESEND_LIMIT) {
+      throw new TooManyRequestsException({
+        message: 'Too many OTP resend requests. Please try again later.',
+        retryAfterSeconds: 300,
+      });
+    }
+
+    // Generate a fresh OTP and reset all attempt counters
     const otp = this.generateOtp();
     const otpHash = await this.hashOtp(otp);
     const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
@@ -128,13 +182,19 @@ export class AuthService {
     await this.usersService.update(user.id, {
       otp: otpHash,
       otpExpiry,
+      otpAttempts: 0,
+      otpInvalidatedAt: undefined,
+      otpResendCount: (user.otpResendCount ?? 0) + 1,
     });
 
     this.emailService.sendVerificationOtp(email, otp).catch(err => {
       console.error('Failed to send OTP email:', err);
     });
 
-    return { message: 'OTP resent to your email' };
+    return {
+      message: 'OTP resent to your email',
+      resendsRemaining: rateLimitResult.remaining,
+    };
   }
 
   async login(email: string, password: string) {

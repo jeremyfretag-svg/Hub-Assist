@@ -17,6 +17,7 @@ import { ForgotPasswordProvider } from '../users/providers/forgot-password.provi
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { OtpRateLimitService } from './otp-rate-limit.service';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
     RefreshTokenRepository,
     ForgotPasswordProvider,
     ResetPasswordProvider,
+    OtpRateLimitService,
   ],
   controllers: [AuthController, BiometricController],
 })
