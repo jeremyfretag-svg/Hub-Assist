@@ -5,6 +5,7 @@ import { Booking, BookingStatus } from './booking.entity';
 import { CreateBookingDto, UpdateBookingDto } from './bookings.dto';
 import { StellarService } from '../stellar/stellar.service';
 import { Workspace } from '../workspaces/workspace.entity';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class BookingsService {
@@ -12,6 +13,7 @@ export class BookingsService {
     @InjectRepository(Booking) private repo: Repository<Booking>,
     @InjectRepository(Workspace) private workspaceRepo: Repository<Workspace>,
     private stellarService: StellarService,
+    private notificationsService: NotificationsService,
   ) {}
 
   async create(userId: string, dto: CreateBookingDto) {
@@ -99,7 +101,12 @@ export class BookingsService {
     }
 
     booking.status = BookingStatus.CONFIRMED;
-    return this.repo.save(booking);
+    const saved = await this.repo.save(booking);
+    this.notificationsService.sendToUser(booking.userId, 'booking:confirmed', {
+      bookingId: booking.id,
+      workspaceName: booking.workspace?.name,
+    });
+    return saved;
   }
 
   async cancel(id: string, userId: string) {
@@ -108,7 +115,11 @@ export class BookingsService {
       throw new ForbiddenException('Not authorized to cancel this booking');
     }
     booking.status = BookingStatus.CANCELLED;
-    return this.repo.save(booking);
+    const saved = await this.repo.save(booking);
+    this.notificationsService.sendToUser(booking.userId, 'booking:cancelled', {
+      bookingId: booking.id,
+    });
+    return saved;
   }
 
   async update(id: string, dto: UpdateBookingDto) {
