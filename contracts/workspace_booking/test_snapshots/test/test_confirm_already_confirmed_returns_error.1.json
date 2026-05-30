@@ -108,11 +108,8 @@
           "function": {
             "contract_fn": {
               "contract_address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD2KM",
-              "function_name": "confirm",
+              "function_name": "confirm_booking",
               "args": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
                 {
                   "u64": 1
                 }
@@ -985,18 +982,11 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": 1
-                }
-              ]
+              "u64": 1
             }
           }
         }
@@ -1012,7 +1002,7 @@
           "v0": {
             "topics": [
               {
-                "symbol": "confirm"
+                "symbol": "confirm_b"
               }
             ],
             "data": {
@@ -1035,7 +1025,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": "void"
@@ -1059,18 +1049,11 @@
                 "bytes": "0000000000000000000000000000000000000000000000000000000000000001"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": {
-              "vec": [
-                {
-                  "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                },
-                {
-                  "u64": 1
-                }
-              ]
+              "u64": 1
             }
           }
         }
@@ -1089,7 +1072,7 @@
                 "symbol": "fn_return"
               },
               {
-                "symbol": "confirm"
+                "symbol": "confirm_booking"
               }
             ],
             "data": {
@@ -1150,13 +1133,10 @@
                   "string": "contract try_call failed"
                 },
                 {
-                  "symbol": "confirm"
+                  "symbol": "confirm_booking"
                 },
                 {
                   "vec": [
-                    {
-                      "address": "CAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAFCT4"
-                    },
                     {
                       "u64": 1
                     }
