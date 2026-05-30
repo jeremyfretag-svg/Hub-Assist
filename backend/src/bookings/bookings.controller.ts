@@ -31,8 +31,43 @@ export class BookingsController {
 
   @Post()
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Create a new booking' })
+  @ApiOperation({
+    summary: 'Create a new booking',
+    description: `Creates a new booking.
+    
+Conflict Rules:
+| Condition | Description |
+|-----------|-------------|
+| Maintenance Window | The requested time falls within an admin-set maintenance window |
+| Capacity Limits | The requested time exceeds the maximum capacity of the workspace |
+| Overlapping Time | For a single capacity workspace, another booking already occupies the time range |`
+  })
   @ApiResponse({ status: 201, description: 'Booking created successfully' })
+  @ApiResponse({
+    status: 409,
+    description: 'Workspace booking conflict detected',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 409 },
+        message: { type: 'string', example: 'Workspace booking conflict detected' },
+        conflictDetail: {
+          type: 'object',
+          properties: {
+            reason: { type: 'string', example: 'Capacity Exceeded' },
+            conflictingBookingId: { type: 'string', example: '123e4567-e89b-12d3-a456-426614174000' },
+            overlappingWindow: {
+              type: 'object',
+              properties: {
+                startTime: { type: 'string', format: 'date-time' },
+                endTime: { type: 'string', format: 'date-time' }
+              }
+            }
+          }
+        }
+      }
+    }
+  })
    create(@Request() req: any, @Body() dto: CreateBookingDto) {
      return this.service.create(req.user.id, dto);
    }

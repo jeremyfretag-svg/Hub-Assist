@@ -5,6 +5,7 @@ import { BookingsService } from './bookings.service';
 import { Booking, BookingStatus } from './booking.entity';
 import { Workspace } from '../workspaces/workspace.entity';
 import { StellarService } from '../stellar/stellar.service';
+import { ConflictDetectionService } from './conflict-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
 const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true };
@@ -28,12 +29,21 @@ const mockBooking = (overrides: Partial<Booking> = {}): Booking => ({
 describe('BookingsService', () => {
   let service: BookingsService;
 
+  const mockManager = {
+    findOne: jest.fn(),
+    create: jest.fn(),
+    save: jest.fn(),
+  };
+
   const mockBookingRepo = {
     create: jest.fn(),
     save: jest.fn(),
     findOne: jest.fn(),
     find: jest.fn(),
     createQueryBuilder: jest.fn(),
+    manager: {
+      transaction: jest.fn(async (cb) => cb(mockManager)),
+    },
   };
 
   const mockWorkspaceRepo = {
@@ -48,6 +58,10 @@ describe('BookingsService', () => {
     sendToUser: jest.fn(),
   };
 
+  const mockConflictDetectionService = {
+    hasConflict: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -56,6 +70,7 @@ describe('BookingsService', () => {
         { provide: getRepositoryToken(Workspace), useValue: mockWorkspaceRepo },
         { provide: StellarService, useValue: mockStellarService },
         { provide: NotificationsService, useValue: mockNotificationsService },
+        { provide: ConflictDetectionService, useValue: mockConflictDetectionService },
       ],
     }).compile();
 
@@ -82,26 +97,29 @@ describe('BookingsService', () => {
     it('creates and returns a booking', async () => {
       mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
       mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
       const created = mockBooking();
-      mockBookingRepo.create.mockReturnValue(created);
-      mockBookingRepo.save.mockResolvedValue(created);
+      mockManager.create.mockReturnValue(created);
+      mockManager.save.mockResolvedValue(created);
 
       const result = await service.create('user-1', dto);
       expect(result).toEqual(created);
-      expect(mockBookingRepo.save).toHaveBeenCalledWith(created);
+      expect(mockManager.save).toHaveBeenCalledWith(created);
     });
 
     it('throws 404 when workspace not found', async () => {
-      mockWorkspaceRepo.findOne.mockResolvedValue(null);
+      mockManager.findOne.mockResolvedValueOnce(null);
       await expect(service.create('user-1', dto)).rejects.toThrow(NotFoundException);
     });
 
     it('throws 409 when overlapping confirmed booking exists', async () => {
-      mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
       // Overlapping confirmed booking
       mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(
         mockBooking({ status: BookingStatus.CONFIRMED, startTime: new Date('2025-01-01T08:00:00Z'), endTime: new Date('2025-01-01T10:00:00Z') }),
       ));
+      mockConflictDetectionService.hasConflict.mockResolvedValue({ reason: 'Overlap' });
 
       await expect(service.create('user-1', dto)).rejects.toThrow(ConflictException);
     });
@@ -110,9 +128,12 @@ describe('BookingsService', () => {
       mockWorkspaceRepo.findOne.mockResolvedValue(mockWorkspace);
       // Non-overlapping: ends before our start
       mockBookingRepo.createQueryBuilder.mockReturnValue(buildQbForCreate(null));
+      mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
+      // Non-overlapping
+      mockConflictDetectionService.hasConflict.mockResolvedValue(null);
       const created = mockBooking();
-      mockBookingRepo.create.mockReturnValue(created);
-      mockBookingRepo.save.mockResolvedValue(created);
+      mockManager.create.mockReturnValue(created);
+      mockManager.save.mockResolvedValue(created);
 
       await expect(service.create('user-1', dto)).resolves.toEqual(created);
     });

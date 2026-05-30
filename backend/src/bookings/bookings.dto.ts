@@ -32,4 +32,12 @@ export class UpdateBookingDto {
   @SanitizeString()
   @IsString()
   stellarTxHash?: string;
+
+  @IsOptional()
+  @IsDateString()
+  startTime?: string;
+
+  @IsOptional()
+  @IsDateString()
+  endTime?: string;
 }
