@@ -11,6 +11,7 @@ mod tier_management;
 mod validation;
 mod upgrade;
 mod upgrade_errors;
+mod tier_errors;
 mod migration;
 mod pause_errors;
 mod guards;
@@ -34,6 +35,7 @@ pub use tier_management::{TierManagementModule, TierManagementModuleClient, Tier
 pub use validation::{BatchError, BatchValidator};
 pub use upgrade::{UpgradeModule, UpgradeModuleClient};
 pub use upgrade_errors::UpgradeError;
+pub use tier_errors::TierError;
 pub use migration::{MigrationModule, MigrationModuleClient};
 pub use pause_errors::PauseError;
 pub use guards::{require_admin, require_not_paused, require_usdc_set, validate_expiry_date, validate_payment, GuardError};
