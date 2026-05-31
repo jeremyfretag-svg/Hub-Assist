@@ -79,7 +79,18 @@ async function bootstrap() {
       'Error responses retain their original shape (statusCode, message, error, timestamp, path).\n\n' +
       '## JWT Revocation\n\n' +
       'Access tokens are immediately invalidated on logout and role-change events via a ' +
-      'Redis-backed blacklist keyed on the `jti` claim. See the auth module README for details.',
+      'Redis-backed blacklist keyed on the `jti` claim. See the auth module README for details.\n\n' +
+      '## Rate Limiting\n\n' +
+      'All endpoints are rate-limited. Exceeded limits return **429 Too Many Requests** with:\n\n' +
+      '| Header | Description |\n' +
+      '|--------|-------------|\n' +
+      '| `X-RateLimit-Limit` | Maximum requests allowed in the window |\n' +
+      '| `X-RateLimit-Window` | Window duration in seconds |\n' +
+      '| `Retry-After` | Seconds until the limit resets |\n\n' +
+      'Stricter limits apply to auth endpoints: `/auth/login` (5/min), `/auth/resend-otp` (3/5min).\n\n' +
+      '## Idempotency\n\n' +
+      'State-mutating endpoints (`POST /bookings`, etc.) require an `X-Idempotency-Key` header.\n' +
+      'Duplicate requests with the same key and user return the original response for 5 minutes.',
     )
     .setVersion('1.0.0')
     .addServer('/api/v1', 'Version 1 (current)')
