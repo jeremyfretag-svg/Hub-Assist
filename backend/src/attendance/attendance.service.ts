@@ -4,6 +4,8 @@ import { Repository } from 'typeorm';
 import { v4 as uuidv4 } from 'uuid';
 import { Attendance, AttendanceAction } from './attendance.entity';
 import { ClockInDto, ClockOutDto } from './attendance.dto';
+import { CursorPaginationQueryDto } from '../common/pagination/dto/cursor-pagination-query.dto';
+import { encodeCursor, decodeCursor } from '../common/pagination/utils/cursor.util';
 
 @Injectable()
 export class AttendanceService {
@@ -96,22 +98,79 @@ export class AttendanceService {
     };
   }
 
-  async getMyAttendance(userId: string, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
-    const [records, total] = await this.attendanceRepository.findAndCount({
+  async getMyAttendance(
+    userId: string,
+    query: CursorPaginationQueryDto,
+  ): Promise<{
+    data: Attendance[];
+    nextCursor: string | null;
+    hasMore: boolean;
+    /** @deprecated Use cursor-based navigation. Kept for backward compatibility. */
+    total?: number;
+    /** @deprecated Use cursor-based navigation. Kept for backward compatibility. */
+    page?: number;
+    /** @deprecated Use cursor-based navigation. Kept for backward compatibility. */
+    limit?: number;
+    /** @deprecated Use cursor-based navigation. Kept for backward compatibility. */
+    pages?: number;
+  }> {
+    const limit = query.limit ?? 20;
+
+    if (query.cursor) {
+      let cursorPayload: { timestamp: string; id: string };
+      try {
+        cursorPayload = decodeCursor(query.cursor);
+      } catch {
+        throw new BadRequestException('Invalid cursor token');
+      }
+
+      // Fetch records that come *before* the cursor position in DESC order,
+      // i.e. timestamp < cursorTimestamp OR (timestamp = cursorTimestamp AND id < cursorId).
+      // TypeORM's FindOptions don't support OR conditions cleanly, so we use
+      // the QueryBuilder for the compound predicate.
+      const records = await this.attendanceRepository
+        .createQueryBuilder('a')
+        .where('a.userId = :userId', { userId })
+        .andWhere(
+          '(a.timestamp < :ts OR (a.timestamp = :ts AND a.id < :id))',
+          { ts: new Date(cursorPayload.timestamp), id: cursorPayload.id },
+        )
+        .orderBy('a.timestamp', 'DESC')
+        .addOrderBy('a.id', 'DESC')
+        .take(limit + 1)
+        .getMany();
+
+      const hasMore = records.length > limit;
+      const data = hasMore ? records.slice(0, limit) : records;
+      const nextCursor =
+        hasMore && data.length > 0
+          ? encodeCursor({
+              timestamp: data[data.length - 1].timestamp.toISOString(),
+              id: data[data.length - 1].id,
+            })
+          : null;
+
+      return { data, nextCursor, hasMore };
+    }
+
+    // First page — no cursor provided
+    const records = await this.attendanceRepository.find({
       where: { userId },
-      order: { timestamp: 'DESC' },
-      skip,
-      take: limit,
+      order: { timestamp: 'DESC', id: 'DESC' },
+      take: limit + 1,
     });
 
-    return {
-      records,
-      total,
-      page,
-      limit,
-      pages: Math.ceil(total / limit),
-    };
+    const hasMore = records.length > limit;
+    const data = hasMore ? records.slice(0, limit) : records;
+    const nextCursor =
+      hasMore && data.length > 0
+        ? encodeCursor({
+            timestamp: data[data.length - 1].timestamp.toISOString(),
+            id: data[data.length - 1].id,
+          })
+        : null;
+
+    return { data, nextCursor, hasMore };
   }
 
   async getUserAttendance(userId: string, page: number = 1, limit: number = 20) {
