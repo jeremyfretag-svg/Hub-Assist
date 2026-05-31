@@ -8,6 +8,8 @@ import { AuthService } from './auth.service';
 import { AuthController } from './auth.controller';
 import { BiometricController } from './biometric.controller';
 import { BiometricService } from './biometric.service';
+import { TotpService } from './totp.service';
+import { TotpController } from './totp.controller';
 import { JwtStrategy } from './jwt.strategy';
 import { EmailService } from './email.service';
 import { RefreshToken } from './refresh-token.entity';
@@ -41,6 +43,7 @@ import { PasswordPolicyModule } from './password-policy/password-policy.module';
   providers: [
     AuthService,
     BiometricService,
+    TotpService,
     JwtStrategy,
     EmailService,
     RefreshTokenRepository,
@@ -48,6 +51,7 @@ import { PasswordPolicyModule } from './password-policy/password-policy.module';
     ResetPasswordProvider,
     OtpRateLimitService,
   ],
-  controllers: [AuthController, BiometricController],
+  controllers: [AuthController, BiometricController, TotpController],
+  exports: [TotpService],
 })
 export class AuthModule {}

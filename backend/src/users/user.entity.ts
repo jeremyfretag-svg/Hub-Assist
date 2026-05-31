@@ -71,6 +71,15 @@ export class User {
   @Column({ type: 'jsonb', nullable: true })
   profilePictureUrls?: ProfilePictureUrls;
 
+  @Column({ default: false })
+  totpEnabled: boolean;
+
+  @Column({ nullable: true })
+  totpSecret?: string;
+
+  @Column({ type: 'simple-array', nullable: true })
+  backupCodes?: string[];
+
   @CreateDateColumn()
   createdAt!: Date;
 

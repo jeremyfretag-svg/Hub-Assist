@@ -9,6 +9,7 @@ import {
   ApiExtraModels,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { AttendanceService } from './attendance.service';
@@ -17,7 +18,7 @@ import { CursorPaginationQueryDto } from '../common/pagination/dto/cursor-pagina
 
 @ApiTags('attendance')
 @ApiBearerAuth('bearer')
-@UseGuards(JwtAuthGuard)
+@UseGuards(JwtAuthGuard, RolesGuard)
 @Controller({ version: '1', path: 'attendance' })
 @ApiExtraModels(AttendanceSummaryQueryDto)
 export class AttendanceController {
@@ -187,5 +188,63 @@ for the full response schema.`,
   @ApiResponse({ status: 400, description: 'Invalid timezone or date parameter' })
   async getAttendanceSummary(@Query() query: AttendanceSummaryQueryDto) {
     return this.attendanceService.getAttendanceSummary(query);
+  }
+
+  @Get('all')
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Get all attendance records with optional filters (admin only, paginated)',
+  })
+  @ApiQuery({ name: 'page', type: Number, required: false, example: 1 })
+  @ApiQuery({ name: 'limit', type: Number, required: false, example: 20 })
+  @ApiQuery({ name: 'userId', type: String, required: false, description: 'Filter by user ID' })
+  @ApiQuery({
+    name: 'action',
+    enum: AttendanceAction,
+    required: false,
+    description: 'Filter by action (clock_in or clock_out)',
+  })
+  @ApiQuery({
+    name: 'startDate',
+    type: String,
+    required: false,
+    description: 'Filter by start date (ISO 8601)',
+  })
+  @ApiQuery({
+    name: 'endDate',
+    type: String,
+    required: false,
+    description: 'Filter by end date (ISO 8601)',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'All attendance records retrieved successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        records: { type: 'array' },
+        total: { type: 'number' },
+        page: { type: 'number' },
+        limit: { type: 'number' },
+        pages: { type: 'number' },
+      },
+    },
+  })
+  async getAllAttendance(
+    @Query('page') page: number = 1,
+    @Query('limit') limit: number = 20,
+    @Query('userId') userId?: string,
+    @Query('action') action?: AttendanceAction,
+    @Query('startDate') startDate?: string,
+    @Query('endDate') endDate?: string,
+  ) {
+    const filters = {
+      userId,
+      action,
+      startDate: startDate ? new Date(startDate) : undefined,
+      endDate: endDate ? new Date(endDate) : undefined,
+    };
+
+    return this.attendanceService.getAllAttendance(page, limit, filters);
   }
 }

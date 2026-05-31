@@ -337,26 +337,49 @@ export class AttendanceService {
     };
   }
 
-  // ── Private helpers ───────────────────────────────────────────────────────
+  async getAllAttendance(
+    page: number = 1,
+    limit: number = 20,
+    filters?: { userId?: string; action?: AttendanceAction; startDate?: Date; endDate?: Date },
+  ) {
+    const skip = (page - 1) * limit;
+    const query = this.attendanceRepository
+      .createQueryBuilder('attendance')
+      .leftJoinAndSelect('attendance.user', 'user')
+      .orderBy('attendance.timestamp', 'DESC');
+
+    if (filters?.userId) {
+      query.andWhere('attendance.userId = :userId', { userId: filters.userId });
+    }
+
+    if (filters?.action) {
+      query.andWhere('attendance.action = :action', { action: filters.action });
+    }
+
+    if (filters?.startDate) {
+      query.andWhere('attendance.timestamp >= :startDate', { startDate: filters.startDate });
+    }
+
+    if (filters?.endDate) {
+      query.andWhere('attendance.timestamp <= :endDate', { endDate: filters.endDate });
+    }
+
+    const [records, total] = await query.skip(skip).take(limit).getManyAndCount();
+
+    return { records, total, page, limit, pages: Math.ceil(total / limit) };
+  }
 
   private toBucketKey(dt: DateTime, period: 'daily' | 'weekly' | 'monthly'): string {
     switch (period) {
-      case 'daily':
-        // "2026-05-30"
-        return dt.toISODate()!;
-      case 'weekly':
-        // "2026-W22"  — ISO week number, zero-padded
-        return `${dt.weekYear}-W${String(dt.weekNumber).padStart(2, '0')}`;
-      case 'monthly':
-        // "2026-05"
-        return `${dt.year}-${String(dt.month).padStart(2, '0')}`;
+      case 'daily': return dt.toISODate()!;
+      case 'weekly': return `${dt.weekYear}-W${String(dt.weekNumber).padStart(2, '0')}`;
+      case 'monthly': return `${dt.year}-${String(dt.month).padStart(2, '0')}`;
     }
   }
 
   private peakHour(hourMap: Map<number, number>): number | null {
     if (hourMap.size === 0) return null;
-    let peak = -1;
-    let max  = -1;
+    let peak = -1, max = -1;
     for (const [hour, count] of hourMap) {
       if (count > max) { max = count; peak = hour; }
     }

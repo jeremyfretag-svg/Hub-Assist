@@ -112,8 +112,6 @@ import { RedisThrottlerGuard } from './common/guards/redis-throttler.guard';
     ReportsModule,
   ],
   providers: [
-    // RedisThrottlerGuard replaces the stock ThrottlerGuard and adds
-    // X-RateLimit-* response headers.
     { provide: APP_GUARD, useClass: RedisThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },
