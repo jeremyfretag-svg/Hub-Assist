@@ -20,6 +20,7 @@ import { HealthModule } from './health/health.module';
 import { HubsModule } from './hubs/hubs.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { ReportsModule } from './reports/reports.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -59,6 +60,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     HubsModule,
     AnalyticsModule,
     NotificationsModule,
+    ReportsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
