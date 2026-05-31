@@ -16,6 +16,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { ConflictDetectionService } from './conflict-detection.service';
 import { RecurrenceService } from './recurrence.service';
 import { CancellationPolicyService } from './cancellation-policy.service';
+import { PricingEngineService } from '../pricing/pricing-engine.service';
+import { PriceRule } from '../pricing/price-rule.entity';
 
 @Injectable()
 export class BookingsService {
@@ -27,11 +29,12 @@ export class BookingsService {
     private conflictDetectionService: ConflictDetectionService,
     private recurrenceService: RecurrenceService,
     private cancellationPolicyService: CancellationPolicyService,
+    private pricingEngine: PricingEngineService,
   ) {}
 
   // ── create ─────────────────────────────────────────────────────────────────
 
-  async create(userId: string, dto: CreateBookingDto) {
+  async create(userId: string, dto: CreateBookingDto, userTier: string = 'member') {
     return this.repo.manager.transaction(async (manager) => {
       const workspace = await manager.findOne(Workspace, {
         where: { id: dto.workspaceId },
@@ -124,9 +127,18 @@ export class BookingsService {
         });
       }
 
-      const hours = durationMs / (1000 * 60 * 60);
-      const totalAmount = Number(
-        (hours * Number(workspace.pricePerHour)).toFixed(2),
+      // Load price rules inside the transaction so the snapshot is consistent
+      const rules = await manager.find(PriceRule, {
+        where: { workspaceId: dto.workspaceId, isActive: true },
+      });
+
+      const rateSnapshot = await this.pricingEngine.calculatePrice(
+        dto.workspaceId,
+        startTime,
+        endTime,
+        userTier,
+        Number(workspace.pricePerHour),
+        rules,
       );
 
       const booking = manager.create(Booking, {
@@ -134,7 +146,8 @@ export class BookingsService {
         userId,
         startTime,
         endTime,
-        totalAmount,
+        totalAmount: rateSnapshot.totalAmount,
+        appliedRateSnapshot: rateSnapshot,
         status: BookingStatus.PENDING,
       });
 
@@ -265,86 +278,45 @@ export class BookingsService {
 
   // ── cancelSeries ───────────────────────────────────────────────────────────
 
-  /**
-   * Cancels all FUTURE instances of a recurring series.
-   * Past instances (startTime <= now) are preserved.
-   * Series are identified by seriesId.
-   *
-   * @param seriesId - UUID of the series to cancel
-   * @param userId   - The requesting user's ID (must own the series)
-   * @returns Object with counts of cancelled and preserved instances
-   */
   async cancelSeries(seriesId: string, userId: string) {
     const now = new Date();
-
-    // Load all instances of the series
     const allInstances = await this.repo.find({ where: { seriesId } });
 
     if (allInstances.length === 0) {
       throw new NotFoundException(`No bookings found for series "${seriesId}"`);
     }
 
-    // Ownership check — all instances belong to the same user
     const owner = allInstances[0];
     if (owner.userId !== userId) {
-      throw new ForbiddenException(
-        'Not authorized to cancel this booking series',
-      );
+      throw new ForbiddenException('Not authorized to cancel this booking series');
     }
 
-    // Split into future (cancellable) and past (preserved)
     const futureInstances = allInstances.filter(
-      (b) =>
-        b.startTime > now &&
-        b.status !== BookingStatus.CANCELLED,
+      (b) => b.startTime > now && b.status !== BookingStatus.CANCELLED,
     );
 
     if (futureInstances.length === 0) {
-      return {
-        cancelledCount: 0,
-        preservedCount: allInstances.length,
-        message: 'No future instances to cancel.',
-      };
+      return { cancelledCount: 0, preservedCount: allInstances.length, message: 'No future instances to cancel.' };
     }
 
-    // Evaluate refund for each future instance and cancel
     const cancelledAt = now;
     for (const instance of futureInstances) {
-      // Load workspace relation for policy evaluation
-      const bookingWithWorkspace = await this.repo.findOne({
-        where: { id: instance.id },
-        relations: ['workspace'],
-      });
-
+      const bookingWithWorkspace = await this.repo.findOne({ where: { id: instance.id }, relations: ['workspace'] });
       if (bookingWithWorkspace) {
-        const refundEval =
-          await this.cancellationPolicyService.evaluateRefund(
-            bookingWithWorkspace,
-            cancelledAt,
-          );
+        const refundEval = await this.cancellationPolicyService.evaluateRefund(bookingWithWorkspace, cancelledAt);
         instance.refundAmount = refundEval.refundAmount;
       }
-
       instance.status = BookingStatus.CANCELLED;
     }
 
     await this.repo.save(futureInstances);
-
-    this.notificationsService.sendToUser(userId, 'booking:series_cancelled', {
-      seriesId,
-      cancelledCount: futureInstances.length,
-    });
-
-    return {
-      cancelledCount: futureInstances.length,
-      preservedCount: allInstances.length - futureInstances.length,
-      message: `Cancelled ${futureInstances.length} future instance(s). Past instances preserved.`,
-    };
+    this.notificationsService.sendToUser(userId, 'booking:series_cancelled', { seriesId, cancelledCount: futureInstances.length });
+    return { cancelledCount: futureInstances.length, preservedCount: allInstances.length - futureInstances.length, message: `Cancelled ${futureInstances.length} future instance(s). Past instances preserved.` };
   }
 
   // ── update ─────────────────────────────────────────────────────────────────
 
-  async update(id: string, dto: UpdateBookingDto) {
+  async update(id: string, dto: UpdateBookingDto, userTier?: string) {
     return this.repo.manager.transaction(async (manager) => {
       const booking = await manager.findOne(Booking, {
         where: { id },
@@ -376,12 +348,22 @@ export class BookingsService {
           });
         }
 
-        const workspace = booking.workspace;
-        const hours =
-          (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-        booking.totalAmount = Number(
-          (hours * Number(workspace.pricePerHour)).toFixed(2),
+        const rules = await manager.find(PriceRule, {
+          where: { workspaceId: booking.workspaceId, isActive: true },
+        });
+
+        const tier = userTier ?? booking.user?.role ?? 'member';
+        const rateSnapshot = await this.pricingEngine.calculatePrice(
+          booking.workspaceId,
+          startTime,
+          endTime,
+          tier,
+          Number(booking.workspace.pricePerHour),
+          rules,
         );
+
+        booking.totalAmount = rateSnapshot.totalAmount;
+        booking.appliedRateSnapshot = rateSnapshot;
       }
 
       Object.assign(booking, dto);

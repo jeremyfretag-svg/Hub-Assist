@@ -14,6 +14,8 @@ import { ConflictDetectionService } from './conflict-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { RecurrenceService } from './recurrence.service';
 import { CancellationPolicyService } from './cancellation-policy.service';
+import { PricingEngineService } from '../pricing/pricing-engine.service';
+import { UserRole } from '../users/user.entity';
 
 const mockWorkspace = {
   id: 'ws-1',
@@ -44,6 +46,7 @@ describe('BookingsService', () => {
 
   const mockManager = {
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]), // price rules
     create: jest.fn(),
     save: jest.fn(),
   };
@@ -83,6 +86,16 @@ describe('BookingsService', () => {
     evaluateRefund: jest.fn(),
   };
 
+  const mockPricingEngineService = {
+    calculatePrice: jest.fn().mockResolvedValue({
+      segments: [],
+      totalAmount: 20,
+      userTier: UserRole.MEMBER,
+      tierDiscount: 0.1,
+      calculatedAt: new Date().toISOString(),
+    }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -94,6 +107,7 @@ describe('BookingsService', () => {
         { provide: ConflictDetectionService, useValue: mockConflictDetectionService },
         { provide: RecurrenceService, useValue: mockRecurrenceService },
         { provide: CancellationPolicyService, useValue: mockCancellationPolicyService },
+        { provide: PricingEngineService, useValue: mockPricingEngineService },
       ],
     }).compile();
 
@@ -118,21 +132,21 @@ describe('BookingsService', () => {
       mockManager.create.mockReturnValue(created);
       mockManager.save.mockResolvedValue(created);
 
-      const result = await service.create('user-1', dto);
+      const result = await service.create('user-1', dto, UserRole.MEMBER);
       expect(result).toEqual(created);
       expect(mockManager.save).toHaveBeenCalledWith(created);
     });
 
     it('throws 404 when workspace not found', async () => {
       mockManager.findOne.mockResolvedValueOnce(null);
-      await expect(service.create('user-1', dto)).rejects.toThrow(NotFoundException);
+      await expect(service.create('user-1', dto, UserRole.MEMBER)).rejects.toThrow(NotFoundException);
     });
 
     it('throws 409 when overlapping confirmed booking exists', async () => {
       mockManager.findOne.mockResolvedValueOnce(mockWorkspace);
       mockConflictDetectionService.hasConflict.mockResolvedValue({ reason: 'Capacity Exceeded' });
 
-      await expect(service.create('user-1', dto)).rejects.toThrow(ConflictException);
+      await expect(service.create('user-1', dto, UserRole.MEMBER)).rejects.toThrow(ConflictException);
     });
 
     it('throws 400 when endTime is before startTime', async () => {

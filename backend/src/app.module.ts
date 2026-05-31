@@ -22,6 +22,7 @@ import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { PricingModule } from './pricing/pricing.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -79,6 +80,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     HubsModule,
     AnalyticsModule,
     NotificationsModule,
+    PricingModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },
