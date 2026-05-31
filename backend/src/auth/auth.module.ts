@@ -18,12 +18,14 @@ import { ResetPasswordProvider } from '../users/providers/reset-password.provide
 import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OtpRateLimitService } from './otp-rate-limit.service';
+import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
 
 @Module({
   imports: [
     UsersModule,
     PassportModule,
     NotificationsModule,
+    TokenBlacklistModule,
     TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

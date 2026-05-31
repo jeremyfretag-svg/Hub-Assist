@@ -9,6 +9,7 @@ import { ForgotPasswordProvider } from '../users/providers/forgot-password.provi
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { NotificationsService } from '../notifications/notifications.service';
 import { OtpRateLimitService, OTP_MAX_ATTEMPTS, OTP_RESEND_LIMIT } from './otp-rate-limit.service';
+import { TokenBlacklistService } from './token-blacklist.service';
 
 @Injectable()
 export class AuthService {
@@ -21,6 +22,7 @@ export class AuthService {
     private resetPasswordProvider: ResetPasswordProvider,
     private notificationsService: NotificationsService,
     private otpRateLimitService: OtpRateLimitService,
+    private tokenBlacklistService: TokenBlacklistService,
   ) {}
 
   private generateOtp(): string {
@@ -47,6 +49,25 @@ export class AuthService {
     // At least 8 characters, at least one uppercase, one lowercase, and one digit
     const regex = /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$/;
     return regex.test(password);
+  }
+
+  /**
+   * Sign an access token with a unique jti (UUID v4).
+   * The jti is embedded in the payload so it can be blacklisted on logout.
+   */
+  private signAccessToken(payload: { sub: string; email: string; role: string }): string {
+    return this.jwtService.sign({ ...payload, jti: randomUUID() });
+  }
+
+  /**
+   * Blacklist the access token identified by `jti`.
+   * `exp` is the Unix timestamp (seconds) when the token expires.
+   */
+  async blacklistAccessToken(jti: string, exp: number): Promise<void> {
+    const nowMs = Date.now();
+    const expMs = exp * 1000;
+    const remainingMs = expMs - nowMs;
+    await this.tokenBlacklistService.blacklistToken(jti, remainingMs);
   }
 
   async register(email: string, password: string, firstName?: string, lastName?: string) {
@@ -144,7 +165,7 @@ export class AuthService {
     await this.refreshTokenRepository.create(user.id, refreshTokenHash, expiresAt);
 
     return {
-      access_token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      access_token: this.signAccessToken({ sub: user.id, email: user.email, role: user.role }),
       refresh_token: refreshToken,
     };
   }
@@ -214,7 +235,7 @@ export class AuthService {
     await this.refreshTokenRepository.create(user.id, refreshTokenHash, expiresAt);
 
     return {
-      access_token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      access_token: this.signAccessToken({ sub: user.id, email: user.email, role: user.role }),
       refresh_token: refreshToken,
     };
   }
@@ -246,13 +267,20 @@ export class AuthService {
     await this.refreshTokenRepository.create(user.id, newRefreshTokenHash, expiresAt);
 
     return {
-      access_token: this.jwtService.sign({ sub: user.id, email: user.email, role: user.role }),
+      access_token: this.signAccessToken({ sub: user.id, email: user.email, role: user.role }),
       refresh_token: newRefreshToken,
     };
   }
 
-  async logout(userId: string) {
+  async logout(userId: string, jti?: string, exp?: number) {
     await this.refreshTokenRepository.revokeAllUserTokens(userId);
+
+    // Blacklist the current access token so it is rejected immediately,
+    // without waiting for its natural expiry.
+    if (jti && exp !== undefined) {
+      await this.blacklistAccessToken(jti, exp);
+    }
+
     return { message: 'Logged out successfully' };
   }
 

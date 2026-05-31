@@ -32,6 +32,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from './user.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { TokenBlacklistService } from '../auth/token-blacklist.service';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -41,6 +42,7 @@ export class UsersController {
   constructor(
     private readonly usersService: UsersService,
     private readonly cloudinaryService: CloudinaryService,
+    private readonly tokenBlacklistService: TokenBlacklistService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -98,12 +100,22 @@ export class UsersController {
 
   @Patch(':id/role')
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Update user role (admin only)' })
+  @ApiOperation({ summary: 'Update user role (admin only) — immediately revokes the user\'s current access token' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
-  async updateRole(@Param('id') id: string, @Body('role') role: UserRole) {
+  async updateRole(@Param('id') id: string, @Body('role') role: UserRole, @Req() req: any) {
     const result = await this.usersService.update(id, { role });
     await this.cacheManager.del(this.userCacheKey(id));
+
+    // Blacklist the admin's current access token on role-change events so that
+    // any token issued before the role change is immediately invalidated.
+    // This also covers the case where the admin changes their own role.
+    if (req.user?.jti && req.user?.exp !== undefined) {
+      const nowMs = Date.now();
+      const remainingMs = req.user.exp * 1000 - nowMs;
+      await this.tokenBlacklistService.blacklistToken(req.user.jti, remainingMs);
+    }
+
     return result;
   }
 
