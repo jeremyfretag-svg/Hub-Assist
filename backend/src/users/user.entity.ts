@@ -1,4 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, DeleteDateColumn } from 'typeorm';
+import { ProfilePictureUrls } from '../cloudinary/cloudinary.service';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -36,43 +37,43 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   otpExpiry?: Date;
 
-  // ── OTP flood-protection fields ──────────────────────────────────────────
-
-  /**
-   * Number of consecutive wrong OTP guesses since the last OTP was issued.
-   * Reset to 0 when a new OTP is generated.
-   */
   @Column({ default: 0 })
   otpAttempts!: number;
 
-  /**
-   * Set when the OTP is invalidated after MAX_OTP_ATTEMPTS wrong guesses.
-   * A non-null value means the current OTP is no longer usable.
-   */
   @Column({ type: 'timestamp', nullable: true })
   otpInvalidatedAt?: Date;
 
-  /**
-   * Total number of OTP resend requests made by this user.
-   * Used as a DB-level fallback counter when Redis is unavailable.
-   */
   @Column({ default: 0 })
   otpResendCount!: number;
 
-  // ── End OTP flood-protection fields ──────────────────────────────────────
+  @Column({ default: false })
+  isVerified: boolean;
 
-   @Column({ default: false })
-   isVerified: boolean;
+  @Column({ default: true })
+  isActive: boolean;
 
-   @Column({ default: true })
-   isActive: boolean;
+  /**
+   * @deprecated Use `profilePictureUrls` instead.
+   * Kept for backward compatibility – returns the avatar variant URL when
+   * `profilePictureUrls` is set, otherwise the original single URL.
+   */
+  @Column({ nullable: true })
+  profilePicture?: string;
 
-   @Column({ nullable: true })
-   profilePicture?: string;
+  /**
+   * Multi-resolution profile picture URLs stored as JSONB.
+   *
+   * Keys:
+   *  - thumbnail : 50×50  – use for comment avatars, notification icons
+   *  - avatar    : 200×200 – use for profile headers, user cards
+   *  - full      : 800×800 – use for profile detail pages
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  profilePictureUrls?: ProfilePictureUrls;
 
-   @CreateDateColumn()
-   createdAt!: Date;
+  @CreateDateColumn()
+  createdAt!: Date;
 
-   @DeleteDateColumn({ nullable: true })
-   deletedAt?: Date;
+  @DeleteDateColumn({ nullable: true })
+  deletedAt?: Date;
 }

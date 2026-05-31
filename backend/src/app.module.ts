@@ -27,6 +27,7 @@ import { PricingModule } from './pricing/pricing.module';
 import { OutboxModule } from './outbox/outbox.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { AuditLogModule } from './audit/audit-log.module';
+import { ReportsModule } from './reports/reports.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -108,6 +109,7 @@ import { RedisThrottlerGuard } from './common/guards/redis-throttler.guard';
     OutboxModule,
     WebhooksModule,
     AuditLogModule.forRoot(),
+    ReportsModule,
   ],
   providers: [
     // RedisThrottlerGuard replaces the stock ThrottlerGuard and adds

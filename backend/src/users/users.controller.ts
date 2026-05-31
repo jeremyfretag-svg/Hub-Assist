@@ -157,15 +157,67 @@ export class UsersController {
       limits: { fileSize: 5 * 1024 * 1024 },
     }),
   )
-  @ApiOperation({ summary: 'Upload profile picture' })
+  @ApiOperation({
+    summary: 'Upload profile picture',
+    description: `Uploads a profile picture and stores three resolution variants via Cloudinary transformations.
+
+**Variants stored**
+| Key | Dimensions | Use case |
+|-----|-----------|----------|
+| thumbnail | 50×50 | Comment avatars, notification icons |
+| avatar | 200×200 | Profile headers, user cards |
+| full | 800×800 | Profile detail pages |
+
+The upload applies EXIF orientation correction and face-detection auto-crop.
+
+**Backward compatibility**: The legacy \`profilePicture\` field continues to be populated with the \`avatar\` variant URL.`,
+  })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
-  @ApiResponse({ status: 200, description: 'Profile picture uploaded successfully' })
+  @ApiResponse({
+    status: 200,
+    description: 'Profile picture uploaded successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        id: { type: 'string', format: 'uuid' },
+        email: { type: 'string' },
+        profilePicture: {
+          type: 'string',
+          description: '(Deprecated) Avatar variant URL – kept for backward compatibility',
+          example: 'https://res.cloudinary.com/demo/image/upload/w_200,h_200,c_fill,g_face,q_auto,f_auto/hubassist/profile-pictures/abc123',
+        },
+        profilePictureUrls: {
+          type: 'object',
+          description: 'Multi-resolution variant URLs',
+          properties: {
+            thumbnail: {
+              type: 'string',
+              description: '50×50 thumbnail URL',
+              example: 'https://res.cloudinary.com/demo/image/upload/w_50,h_50,c_fill,g_face,q_auto,f_auto/hubassist/profile-pictures/abc123',
+            },
+            avatar: {
+              type: 'string',
+              description: '200×200 avatar URL',
+              example: 'https://res.cloudinary.com/demo/image/upload/w_200,h_200,c_fill,g_face,q_auto,f_auto/hubassist/profile-pictures/abc123',
+            },
+            full: {
+              type: 'string',
+              description: '800×800 full-size URL',
+              example: 'https://res.cloudinary.com/demo/image/upload/w_800,h_800,c_limit,g_auto,q_auto,f_auto/hubassist/profile-pictures/abc123',
+            },
+          },
+        },
+      },
+    },
+  })
+  @ApiResponse({ status: 400, description: 'Invalid file type or size' })
+  @ApiResponse({ status: 404, description: 'User not found' })
   async uploadProfilePicture(
     @Param('id') id: string,
     @UploadedFile(FileValidationPipe) file: Express.Multer.File,
   ) {
-    const url = await this.cloudinaryService.uploadImage(file);
-    const result = await this.usersService.updateProfilePicture(id, url);
+    const urls = await this.cloudinaryService.uploadProfilePicture(file);
+    const result = await this.usersService.updateProfilePicture(id, urls);
     await this.cacheManager.del(this.userCacheKey(id));
     return result;
   }
