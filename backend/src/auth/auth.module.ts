@@ -19,6 +19,7 @@ import { User } from '../users/user.entity';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { OtpRateLimitService } from './otp-rate-limit.service';
 import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
+import { PasswordPolicyModule } from './password-policy/password-policy.module';
 
 @Module({
   imports: [
@@ -26,6 +27,7 @@ import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
     PassportModule,
     NotificationsModule,
     TokenBlacklistModule,
+    PasswordPolicyModule,
     TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User]),
     JwtModule.registerAsync({
       imports: [ConfigModule],

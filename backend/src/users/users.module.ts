@@ -18,9 +18,10 @@ import { ForgotPasswordProvider } from './providers/forgot-password.provider';
 import { ResetPasswordProvider } from './providers/reset-password.provider';
 import { ChangePasswordProvider } from './providers/change-password.provider';
 import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
+import { PasswordPolicyModule } from '../auth/password-policy/password-policy.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule, TokenBlacklistModule],
+  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule, TokenBlacklistModule, PasswordPolicyModule],
   providers: [
     UsersService,
     CreateUserProvider,

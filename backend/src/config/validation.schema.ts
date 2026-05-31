@@ -21,4 +21,5 @@ export const validationSchema = Joi.object({
   MEMBERSHIP_TOKEN_CONTRACT_ID: Joi.string().optional(),
   FRONTEND_URL: Joi.string().default('http://localhost:3000'),
   REDIS_URL: Joi.string().optional(),
+  HIBP_CHECK_ENABLED: Joi.boolean().default(false),
 });
