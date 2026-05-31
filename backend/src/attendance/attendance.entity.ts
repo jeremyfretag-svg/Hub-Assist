@@ -5,6 +5,7 @@ import {
   ManyToOne,
   CreateDateColumn,
   JoinColumn,
+  DeleteDateColumn,
 } from 'typeorm';
 import { User } from '../users/user.entity';
 
@@ -39,4 +40,7 @@ export class Attendance {
 
   @Column({ nullable: true })
   hubId?: string;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt?: Date;
 }

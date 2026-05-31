@@ -19,9 +19,18 @@ import { ResetPasswordProvider } from './providers/reset-password.provider';
 import { ChangePasswordProvider } from './providers/change-password.provider';
 import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
 import { PasswordPolicyModule } from '../auth/password-policy/password-policy.module';
+import { UserSubscriber } from './subscribers/user-subscriber';
+import { Booking } from '../bookings/booking.entity';
+import { RefreshToken } from '../auth/refresh-token.entity';
+import { Attendance } from '../attendance/attendance.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule, TokenBlacklistModule, PasswordPolicyModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Booking, RefreshToken, Attendance]),
+    CloudinaryModule,
+    TokenBlacklistModule,
+    PasswordPolicyModule,
+  ],
   providers: [
     UsersService,
     CreateUserProvider,
@@ -37,6 +46,7 @@ import { PasswordPolicyModule } from '../auth/password-policy/password-policy.mo
     ForgotPasswordProvider,
     ResetPasswordProvider,
     ChangePasswordProvider,
+    UserSubscriber,
   ],
   controllers: [UsersController],
   exports: [UsersService],

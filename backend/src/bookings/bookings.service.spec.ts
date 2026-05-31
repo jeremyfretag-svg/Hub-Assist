@@ -16,6 +16,9 @@ import { RecurrenceService } from './recurrence.service';
 import { CancellationPolicyService } from './cancellation-policy.service';
 import { PricingEngineService } from '../pricing/pricing-engine.service';
 import { UserRole } from '../users/user.entity';
+import { OutboxService } from '../outbox/outbox.service';
+import { WebhookService } from '../webhooks/webhook.service';
+import { AuditLogService } from '../audit/audit-log.service';
 
 const mockWorkspace = {
   id: 'ws-1',
@@ -96,6 +99,18 @@ describe('BookingsService', () => {
     }),
   };
 
+  const mockOutboxService = {
+    create: jest.fn(),
+  };
+
+  const mockWebhookService = {
+    enqueue: jest.fn(),
+  };
+
+  const mockAuditLogService = {
+    log: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -108,6 +123,9 @@ describe('BookingsService', () => {
         { provide: RecurrenceService, useValue: mockRecurrenceService },
         { provide: CancellationPolicyService, useValue: mockCancellationPolicyService },
         { provide: PricingEngineService, useValue: mockPricingEngineService },
+        { provide: OutboxService, useValue: mockOutboxService },
+        { provide: WebhookService, useValue: mockWebhookService },
+        { provide: AuditLogService, useValue: mockAuditLogService },
       ],
     }).compile();
 
@@ -135,6 +153,7 @@ describe('BookingsService', () => {
       const result = await service.create('user-1', dto, UserRole.MEMBER);
       expect(result).toEqual(created);
       expect(mockManager.save).toHaveBeenCalledWith(created);
+      expect(mockOutboxService.create).toHaveBeenCalled();
     });
 
     it('throws 404 when workspace not found', async () => {
@@ -307,40 +326,24 @@ describe('BookingsService', () => {
   // ── confirm ────────────────────────────────────────────────────────────────
 
   describe('confirm', () => {
-    it('confirms a pending booking with valid stellar tx', async () => {
+    it('confirms a pending booking and writes an outbox event without calling Stellar synchronously', async () => {
       const booking = mockBooking({ stellarTxHash: 'tx-hash-123' });
-      mockBookingRepo.findOne.mockResolvedValue(booking);
-      mockStellarService.verifyTransaction.mockResolvedValue({ status: 'SUCCESS' });
-      mockBookingRepo.save.mockResolvedValue({ ...booking, status: BookingStatus.CONFIRMED });
+      mockManager.findOne.mockResolvedValue(booking);
+      mockManager.save.mockResolvedValue({ ...booking, status: BookingStatus.CONFIRMED });
 
       const result = await service.confirm('booking-1');
       expect(result.status).toBe(BookingStatus.CONFIRMED);
+      expect(mockStellarService.verifyTransaction).not.toHaveBeenCalled();
+      expect(mockOutboxService.create).toHaveBeenCalled();
     });
 
     it('throws 404 when booking not found', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(null);
+      mockManager.findOne.mockResolvedValue(null);
       await expect(service.confirm('unknown')).rejects.toThrow(NotFoundException);
     });
 
     it('throws 400 when booking is not pending', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(
-        mockBooking({ status: BookingStatus.CONFIRMED }),
-      );
-      await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws 400 when no stellarTxHash provided', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(
-        mockBooking({ stellarTxHash: null as any }),
-      );
-      await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws 400 when stellar transaction verification fails', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(
-        mockBooking({ stellarTxHash: 'tx-hash-123' }),
-      );
-      mockStellarService.verifyTransaction.mockResolvedValue({ status: 'FAILED' });
+      mockManager.findOne.mockResolvedValue(mockBooking({ status: BookingStatus.CONFIRMED }));
       await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
     });
   });

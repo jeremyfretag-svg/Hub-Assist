@@ -1,4 +1,4 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, DeleteDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { User } from '../users/user.entity';
 
 @Entity('refresh_tokens')
@@ -24,4 +24,7 @@ export class RefreshToken {
 
   @Column({ default: false })
   isRevoked: boolean;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt?: Date;
 }

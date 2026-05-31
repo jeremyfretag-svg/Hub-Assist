@@ -7,6 +7,7 @@ import {
   Body,
   Param,
   UseGuards,
+  UseInterceptors,
   Request,
 } from '@nestjs/common';
 import {
@@ -30,6 +31,8 @@ import {
   UpdateCancellationPolicyDto,
 } from './cancellation-policy.dto';
 import { WorkspaceType } from '../workspaces/workspace.entity';
+import { Audit } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 
 @ApiTags('bookings')
 @ApiBearerAuth('bearer')
@@ -158,11 +161,14 @@ The full pricing breakdown is stored in \`appliedRateSnapshot\` (JSONB) on the b
 
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseInterceptors(AuditInterceptor)
   @Roles(UserRole.ADMIN)
+  @Audit('booking.confirmed')
   @ApiOperation({ summary: 'Confirm booking (admin only)' })
   @ApiParam({ name: 'id', type: String, description: 'Booking ID' })
   @ApiResponse({ status: 200, description: 'Booking confirmed successfully' })
-  confirm(@Param('id') id: string) {
+  async confirm(@Param('id') id: string, @Request() req: any) {
+    req.auditBefore = await this.service.findById(id);
     return this.service.confirm(id);
   }
 

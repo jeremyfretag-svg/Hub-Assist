@@ -10,6 +10,7 @@ import {
   UseGuards,
   UseInterceptors,
   Inject,
+  Req,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -25,6 +26,8 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WorkspacesService } from './workspaces.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 import { WorkspaceType, WorkspaceAvailability } from './workspace.entity';
+import { Audit } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 
 const WORKSPACES_CACHE_KEY = 'workspaces';
 
@@ -80,11 +83,14 @@ export class WorkspacesController {
 
   @Patch(':id')
   @UseGuards(JwtAuthGuard)
+  @UseInterceptors(AuditInterceptor)
+  @Audit('workspace.updated')
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Update workspace' })
   @ApiParam({ name: 'id', type: String, description: 'Workspace ID' })
   @ApiResponse({ status: 200, description: 'Workspace updated successfully' })
-  async update(@Param('id') id: string, @Body() dto: UpdateWorkspaceDto) {
+  async update(@Param('id') id: string, @Body() dto: UpdateWorkspaceDto, @Req() req: any) {
+    req.auditBefore = await this.service.findById(id);
     const result = await this.service.update(id, dto);
     await this.invalidateWorkspacesCache();
     return result;

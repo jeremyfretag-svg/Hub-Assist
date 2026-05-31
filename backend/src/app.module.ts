@@ -5,6 +5,7 @@ import { APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 import { pinoLoggerConfig } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -23,6 +24,9 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { AppLoggerModule } from './common/logger/logger.module';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { PricingModule } from './pricing/pricing.module';
+import { OutboxModule } from './outbox/outbox.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { AuditLogModule } from './audit/audit-log.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -85,6 +89,7 @@ import { RedisThrottlerGuard } from './common/guards/redis-throttler.guard';
         return { ttl: 300_000 };
       },
     }),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     ContactModule,
@@ -100,6 +105,9 @@ import { RedisThrottlerGuard } from './common/guards/redis-throttler.guard';
     AnalyticsModule,
     NotificationsModule,
     PricingModule,
+    OutboxModule,
+    WebhooksModule,
+    AuditLogModule.forRoot(),
   ],
   providers: [
     // RedisThrottlerGuard replaces the stock ThrottlerGuard and adds

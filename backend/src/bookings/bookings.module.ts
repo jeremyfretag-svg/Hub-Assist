@@ -12,6 +12,8 @@ import { Workspace } from '../workspaces/workspace.entity';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
+import { OutboxModule } from '../outbox/outbox.module';
+import { WebhooksModule } from '../webhooks/webhooks.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { PricingModule } from '../pricing/pricing.module';
     StellarModule,
     NotificationsModule,
     PricingModule,
+    OutboxModule,
+    WebhooksModule,
   ],
   providers: [
     BookingsService,

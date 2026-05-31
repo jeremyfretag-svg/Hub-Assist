@@ -33,6 +33,8 @@ import { UserRole } from './user.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { TokenBlacklistService } from '../auth/token-blacklist.service';
+import { Audit } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -100,10 +102,13 @@ export class UsersController {
 
   @Patch(':id/role')
   @Roles(UserRole.ADMIN)
+  @UseInterceptors(AuditInterceptor)
+  @Audit('user.role_updated')
   @ApiOperation({ summary: 'Update user role (admin only) — immediately revokes the user\'s current access token' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
   async updateRole(@Param('id') id: string, @Body('role') role: UserRole, @Req() req: any) {
+    req.auditBefore = await this.usersService.findById(id);
     const result = await this.usersService.update(id, { role });
     await this.cacheManager.del(this.userCacheKey(id));
 

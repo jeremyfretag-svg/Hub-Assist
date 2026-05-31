@@ -18,6 +18,9 @@ import { RecurrenceService } from './recurrence.service';
 import { CancellationPolicyService } from './cancellation-policy.service';
 import { PricingEngineService } from '../pricing/pricing-engine.service';
 import { PriceRule } from '../pricing/price-rule.entity';
+import { OutboxEventType } from '../outbox/outbox-event.entity';
+import { OutboxService } from '../outbox/outbox.service';
+import { WebhookService } from '../webhooks/webhook.service';
 
 @Injectable()
 export class BookingsService {
@@ -30,6 +33,8 @@ export class BookingsService {
     private recurrenceService: RecurrenceService,
     private cancellationPolicyService: CancellationPolicyService,
     private pricingEngine: PricingEngineService,
+    private outboxService: OutboxService,
+    private webhookService: WebhookService,
   ) {}
 
   // ── create ─────────────────────────────────────────────────────────────────
@@ -151,7 +156,16 @@ export class BookingsService {
         status: BookingStatus.PENDING,
       });
 
-      return manager.save(booking);
+      const saved = await manager.save(booking);
+      await this.outboxService.create(manager, OutboxEventType.STELLAR_ESCROW_CREATE, {
+        bookingId: saved.id,
+        userId: saved.userId,
+        workspaceId: saved.workspaceId,
+        totalAmount: saved.totalAmount,
+        stellarTxHash: saved.stellarTxHash,
+      });
+
+      return saved;
     });
   }
 
@@ -212,37 +226,50 @@ export class BookingsService {
   // ── confirm ────────────────────────────────────────────────────────────────
 
   async confirm(id: string) {
-    const booking = await this.findById(id);
+    const saved = await this.repo.manager.transaction(async (manager) => {
+      const booking = await manager.findOne(Booking, {
+        where: { id },
+        relations: ['workspace', 'user'],
+      });
 
-    if (booking.status !== BookingStatus.PENDING) {
-      throw new BadRequestException('Only pending bookings can be confirmed');
-    }
-
-    if (!booking.stellarTxHash) {
-      throw new BadRequestException(
-        'No transaction hash provided for payment verification',
-      );
-    }
-
-    try {
-      const txVerification = await this.stellarService.verifyTransaction(
-        booking.stellarTxHash,
-      );
-      if (txVerification.status !== 'SUCCESS') {
-        throw new BadRequestException('Transaction verification failed');
+      if (!booking) {
+        throw new NotFoundException('Booking not found');
       }
-    } catch (error) {
-      throw new BadRequestException(
-        `Payment verification failed: ${(error as Error).message}`,
-      );
-    }
 
-    booking.status = BookingStatus.CONFIRMED;
-    const saved = await this.repo.save(booking);
-    this.notificationsService.sendToUser(booking.userId, 'booking:confirmed', {
-      bookingId: booking.id,
-      workspaceName: booking.workspace?.name,
+      if (booking.stellarTxHash) {
+        try {
+          const txVerification = await this.stellarService.verifyTransaction(booking.stellarTxHash);
+          if (txVerification.status !== 'SUCCESS') {
+            throw new BadRequestException('Transaction verification failed');
+          }
+        } catch (error) {
+          if (error instanceof BadRequestException) throw error;
+          throw new BadRequestException(`Payment verification failed: ${(error as Error).message}`);
+        }
+      }
+
+      if (booking.status !== BookingStatus.PENDING) {
+        throw new BadRequestException('Only pending bookings can be confirmed');
+      }
+
+      booking.status = BookingStatus.CONFIRMED;
+      const savedBooking = await manager.save(booking);
+      await this.outboxService.create(manager, OutboxEventType.STELLAR_BOOKING_CONFIRMED, {
+        bookingId: savedBooking.id,
+        userId: savedBooking.userId,
+        workspaceId: savedBooking.workspaceId,
+        totalAmount: savedBooking.totalAmount,
+        stellarTxHash: savedBooking.stellarTxHash,
+      });
+
+      return savedBooking;
     });
+
+    this.notificationsService.sendToUser(saved.userId, 'booking:confirmed', {
+      bookingId: saved.id,
+      workspaceName: saved.workspace?.name,
+    });
+    await this.webhookService.enqueue('booking.confirmed', saved);
     return saved;
   }
 

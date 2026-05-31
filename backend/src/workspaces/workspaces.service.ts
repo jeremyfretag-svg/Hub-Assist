@@ -1,12 +1,18 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, MoreThan, Repository } from 'typeorm';
 import { Workspace, WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
+import { Booking, BookingStatus } from '../bookings/booking.entity';
+import { EmailService } from '../email/email.service';
 
 @Injectable()
 export class WorkspacesService {
-  constructor(@InjectRepository(Workspace) private repo: Repository<Workspace>) {}
+  constructor(
+    @InjectRepository(Workspace) private repo: Repository<Workspace>,
+    @InjectRepository(Booking) private bookingRepo: Repository<Booking>,
+    private emailService: EmailService,
+  ) {}
 
   create(dto: CreateWorkspaceDto) {
     return this.repo.save(this.repo.create(dto));
@@ -53,7 +59,36 @@ export class WorkspacesService {
   }
 
   async softDelete(id: string) {
-    await this.findById(id);
-    await this.repo.softDelete(id);
+    const workspace = await this.findById(id);
+    const futureBookings = await this.bookingRepo.find({
+      where: {
+        workspaceId: id,
+        status: BookingStatus.CONFIRMED,
+        startTime: MoreThan(new Date()),
+      },
+      relations: ['user', 'workspace'],
+    });
+
+    await this.repo.manager.transaction(async (manager) => {
+      if (futureBookings.length) {
+        await manager.update(
+          Booking,
+          futureBookings.map((booking) => booking.id),
+          { status: BookingStatus.CANCELLED },
+        );
+      }
+      await manager.softDelete(Workspace, id);
+    });
+
+    await Promise.allSettled(
+      futureBookings
+        .filter((booking) => booking.user?.email)
+        .map((booking) =>
+          this.emailService.sendWorkspaceBookingCancelled(booking.user.email, {
+            bookingId: booking.id,
+            workspaceName: workspace.name,
+          }),
+        ),
+    );
   }
 }
