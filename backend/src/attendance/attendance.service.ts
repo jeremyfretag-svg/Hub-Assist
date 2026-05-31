@@ -86,7 +86,9 @@ export class AttendanceService {
     await this.attendanceRepository.save(attendance);
 
     // Calculate session duration
-    const duration = Math.floor((attendance.timestamp.getTime() - openSession.timestamp.getTime()) / 1000);
+    const duration = Math.floor(
+      (attendance.timestamp.getTime() - openSession.timestamp.getTime()) / 1000,
+    );
 
     return {
       sessionId: openSession.sessionId,
@@ -178,6 +180,44 @@ export class AttendanceService {
         .sort(([, a], [, b]) => b - a)
         .slice(0, 5)
         .map(([hour, count]) => ({ hour: parseInt(hour), count })),
+    };
+  }
+
+  async getAllAttendance(
+    page: number = 1,
+    limit: number = 20,
+    filters?: { userId?: string; action?: AttendanceAction; startDate?: Date; endDate?: Date },
+  ) {
+    const skip = (page - 1) * limit;
+    const query = this.attendanceRepository
+      .createQueryBuilder('attendance')
+      .leftJoinAndSelect('attendance.user', 'user')
+      .orderBy('attendance.timestamp', 'DESC');
+
+    if (filters?.userId) {
+      query.andWhere('attendance.userId = :userId', { userId: filters.userId });
+    }
+
+    if (filters?.action) {
+      query.andWhere('attendance.action = :action', { action: filters.action });
+    }
+
+    if (filters?.startDate) {
+      query.andWhere('attendance.timestamp >= :startDate', { startDate: filters.startDate });
+    }
+
+    if (filters?.endDate) {
+      query.andWhere('attendance.timestamp <= :endDate', { endDate: filters.endDate });
+    }
+
+    const [records, total] = await query.skip(skip).take(limit).getManyAndCount();
+
+    return {
+      records,
+      total,
+      page,
+      limit,
+      pages: Math.ceil(total / limit),
     };
   }
 }

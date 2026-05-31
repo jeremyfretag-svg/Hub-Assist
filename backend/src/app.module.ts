@@ -1,7 +1,7 @@
 import { Module, MiddlewareConsumer, NestModule } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, APP_FILTER } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { WinstonModule } from 'nest-winston';
 import { CacheModule } from '@nestjs/cache-manager';
@@ -25,6 +25,7 @@ import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
 import { HttpLoggerMiddleware } from './common/middlewares/http-logger.middleware';
 import { RequestIdMiddleware } from './common/middlewares/request-id.middleware';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { JwtAuthGuard } from './auth/jwt-auth.guard';
 import { RolesGuard } from './common/guards/roles.guard';
 
@@ -61,6 +62,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     NotificationsModule,
   ],
   providers: [
+    { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: JwtAuthGuard },
     { provide: APP_GUARD, useClass: RolesGuard },

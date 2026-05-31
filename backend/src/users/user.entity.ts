@@ -1,4 +1,10 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, DeleteDateColumn } from 'typeorm';
+import {
+  Entity,
+  PrimaryGeneratedColumn,
+  Column,
+  CreateDateColumn,
+  DeleteDateColumn,
+} from 'typeorm';
 
 export enum UserRole {
   ADMIN = 'admin',
@@ -36,18 +42,28 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   otpExpiry?: Date;
 
-   @Column({ default: false })
-   isVerified: boolean;
+  @Column({ default: false })
+  isVerified: boolean;
 
-   @Column({ default: true })
-   isActive: boolean;
+  @Column({ default: true })
+  isActive: boolean;
 
-   @Column({ nullable: true })
-   profilePicture?: string;
+  @Column({ nullable: true })
+  profilePicture?: string;
 
-   @CreateDateColumn()
-   createdAt!: Date;
+  // TOTP (Time-based One-Time Password) fields for 2FA
+  @Column({ default: false })
+  totpEnabled: boolean;
 
-   @DeleteDateColumn({ nullable: true })
-   deletedAt?: Date;
+  @Column({ nullable: true })
+  totpSecret?: string;
+
+  @Column({ type: 'simple-array', nullable: true })
+  backupCodes?: string[];
+
+  @CreateDateColumn()
+  createdAt!: Date;
+
+  @DeleteDateColumn({ nullable: true })
+  deletedAt?: Date;
 }
