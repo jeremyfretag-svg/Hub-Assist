@@ -8,9 +8,15 @@ import { StellarModule } from '../stellar/stellar.module';
 import { Workspace } from '../workspaces/workspace.entity';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { PricingModule } from '../pricing/pricing.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Booking, Workspace]), StellarModule, NotificationsModule],
+  imports: [
+    TypeOrmModule.forFeature([Booking, Workspace]),
+    StellarModule,
+    NotificationsModule,
+    PricingModule,
+  ],
   providers: [BookingsService, ConflictDetectionService, RolesGuard],
   controllers: [BookingsController],
   exports: [BookingsService],

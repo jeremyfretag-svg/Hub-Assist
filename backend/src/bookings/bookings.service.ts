@@ -1,4 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException, ForbiddenException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+  ForbiddenException,
+  ConflictException,
+} from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { Booking, BookingStatus } from './booking.entity';
@@ -7,6 +13,8 @@ import { StellarService } from '../stellar/stellar.service';
 import { Workspace } from '../workspaces/workspace.entity';
 import { NotificationsService } from '../notifications/notifications.service';
 import { ConflictDetectionService } from './conflict-detection.service';
+import { PricingEngineService } from '../pricing/pricing-engine.service';
+import { PriceRule } from '../pricing/price-rule.entity';
 
 @Injectable()
 export class BookingsService {
@@ -16,22 +24,16 @@ export class BookingsService {
     private stellarService: StellarService,
     private notificationsService: NotificationsService,
     private conflictDetectionService: ConflictDetectionService,
+    private pricingEngine: PricingEngineService,
   ) {}
 
-  async create(userId: string, dto: CreateBookingDto) {
+  async create(userId: string, dto: CreateBookingDto, userTier: string) {
     return this.repo.manager.transaction(async (manager) => {
       const workspace = await manager.findOne(Workspace, { where: { id: dto.workspaceId } });
       if (!workspace) {
         throw new NotFoundException('Workspace not found');
       }
 
-    // Validate no overlapping bookings with confirmed status
-    const overlapping = await this.repo
-      .createQueryBuilder('booking')
-      .where('booking.workspaceId = :workspaceId', { workspaceId: dto.workspaceId })
-      .andWhere('booking.status = :status', { status: BookingStatus.CONFIRMED })
-      .andWhere('(booking.startTime BETWEEN :startTime AND :endTime OR booking.endTime BETWEEN :startTime AND :endTime OR :startTime BETWEEN booking.startTime AND booking.endTime)', { startTime, endTime })
-      .getOne();
       const startTime = new Date(dto.startTime);
       const endTime = new Date(dto.endTime);
 
@@ -49,15 +51,27 @@ export class BookingsService {
         });
       }
 
-      const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-      const totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
+      // Load price rules inside the transaction so the snapshot is consistent
+      const rules = await manager.find(PriceRule, {
+        where: { workspaceId: dto.workspaceId, isActive: true },
+      });
+
+      const rateSnapshot = await this.pricingEngine.calculatePrice(
+        dto.workspaceId,
+        startTime,
+        endTime,
+        userTier,
+        Number(workspace.pricePerHour),
+        rules,
+      );
 
       const booking = manager.create(Booking, {
         ...dto,
         userId,
         startTime,
         endTime,
-        totalAmount,
+        totalAmount: rateSnapshot.totalAmount,
+        appliedRateSnapshot: rateSnapshot,
         status: BookingStatus.PENDING,
       });
 
@@ -66,7 +80,10 @@ export class BookingsService {
   }
 
   async findAll(userId?: string, isAdmin: boolean = false) {
-    const query = this.repo.createQueryBuilder('booking').leftJoinAndSelect('booking.workspace', 'workspace').leftJoinAndSelect('booking.user', 'user');
+    const query = this.repo
+      .createQueryBuilder('booking')
+      .leftJoinAndSelect('booking.workspace', 'workspace')
+      .leftJoinAndSelect('booking.user', 'user');
 
     if (!isAdmin && userId) {
       query.where('booking.userId = :userId', { userId });
@@ -102,7 +119,6 @@ export class BookingsService {
       throw new BadRequestException('Only pending bookings can be confirmed');
     }
 
-    // Verify on-chain payment
     if (!booking.stellarTxHash) {
       throw new BadRequestException('No transaction hash provided for payment verification');
     }
@@ -138,7 +154,7 @@ export class BookingsService {
     return saved;
   }
 
-  async update(id: string, dto: UpdateBookingDto) {
+  async update(id: string, dto: UpdateBookingDto, userTier?: string) {
     return this.repo.manager.transaction(async (manager) => {
       const booking = await manager.findOne(Booking, {
         where: { id },
@@ -168,9 +184,23 @@ export class BookingsService {
           });
         }
 
-        const workspace = booking.workspace;
-        const hours = (endTime.getTime() - startTime.getTime()) / (1000 * 60 * 60);
-        booking.totalAmount = Number((hours * Number(workspace.pricePerHour)).toFixed(2));
+        // Recalculate price with dynamic engine when times change
+        const rules = await manager.find(PriceRule, {
+          where: { workspaceId: booking.workspaceId, isActive: true },
+        });
+
+        const tier = userTier ?? booking.user?.role ?? 'member';
+        const rateSnapshot = await this.pricingEngine.calculatePrice(
+          booking.workspaceId,
+          startTime,
+          endTime,
+          tier,
+          Number(booking.workspace.pricePerHour),
+          rules,
+        );
+
+        booking.totalAmount = rateSnapshot.totalAmount;
+        booking.appliedRateSnapshot = rateSnapshot;
       }
 
       Object.assign(booking, dto);

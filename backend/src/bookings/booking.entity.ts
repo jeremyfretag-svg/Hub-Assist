@@ -9,6 +9,7 @@ import {
 } from 'typeorm';
 import { Workspace } from '../workspaces/workspace.entity';
 import { User } from '../users/user.entity';
+import { RateSnapshot } from '../pricing/pricing.dto';
 
 export enum BookingStatus {
   PENDING = 'Pending',
@@ -53,6 +54,13 @@ export class Booking {
 
   @Column({ nullable: true })
   hubId?: string;
+
+  /**
+   * Immutable snapshot of the pricing rules applied at booking creation time.
+   * Stored as JSONB so historical pricing is preserved even if rules change later.
+   */
+  @Column({ type: 'jsonb', nullable: true })
+  appliedRateSnapshot?: RateSnapshot;
 
   @CreateDateColumn()
   createdAt!: Date;

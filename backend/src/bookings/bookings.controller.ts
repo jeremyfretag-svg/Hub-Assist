@@ -33,14 +33,33 @@ export class BookingsController {
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
     summary: 'Create a new booking',
-    description: `Creates a new booking.
-    
-Conflict Rules:
+    description: `Creates a new booking with **dynamic pricing**.
+
+## Pricing Rules
+
+Booking cost is calculated by the PricingEngine using time-of-day rates, day-of-week multipliers, and membership tier discounts.
+
+### How it works
+1. The booking window is split into hour-aligned segments.
+2. Each segment is matched against active \`PriceRule\` records for the workspace (by \`dayOfWeek\` + \`startHour\`/\`endHour\`).
+3. If no rule matches a segment, the workspace's base \`pricePerHour\` is used as a fallback.
+4. A tier discount is applied to the gross total:
+
+| Role   | Discount |
+|--------|----------|
+| member | 10 %     |
+| staff  | 15 %     |
+| admin  | 0 %      |
+
+### Rate Snapshot
+The full pricing breakdown is stored in \`appliedRateSnapshot\` (JSONB) on the booking record for historical auditability. This snapshot is immutable after creation — changing price rules later does **not** affect existing bookings.
+
+### Conflict Rules
 | Condition | Description |
 |-----------|-------------|
 | Maintenance Window | The requested time falls within an admin-set maintenance window |
 | Capacity Limits | The requested time exceeds the maximum capacity of the workspace |
-| Overlapping Time | For a single capacity workspace, another booking already occupies the time range |`
+| Overlapping Time | For a single-capacity workspace, another booking already occupies the time range |`,
   })
   @ApiResponse({ status: 201, description: 'Booking created successfully' })
   @ApiResponse({
@@ -60,17 +79,17 @@ Conflict Rules:
               type: 'object',
               properties: {
                 startTime: { type: 'string', format: 'date-time' },
-                endTime: { type: 'string', format: 'date-time' }
-              }
-            }
-          }
-        }
-      }
-    }
+                endTime: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+        },
+      },
+    },
   })
-   create(@Request() req: any, @Body() dto: CreateBookingDto) {
-     return this.service.create(req.user.id, dto);
-   }
+  create(@Request() req: any, @Body() dto: CreateBookingDto) {
+    return this.service.create(req.user.id, dto, req.user.role ?? 'member');
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)

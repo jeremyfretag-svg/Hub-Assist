@@ -7,6 +7,8 @@ import { Workspace } from '../workspaces/workspace.entity';
 import { StellarService } from '../stellar/stellar.service';
 import { ConflictDetectionService } from './conflict-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PricingEngineService } from '../pricing/pricing-engine.service';
+import { UserRole } from '../users/user.entity';
 
 const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true };
 
@@ -31,6 +33,7 @@ describe('BookingsService', () => {
 
   const mockManager = {
     findOne: jest.fn(),
+    find: jest.fn().mockResolvedValue([]), // price rules
     create: jest.fn(),
     save: jest.fn(),
   };
@@ -62,6 +65,16 @@ describe('BookingsService', () => {
     hasConflict: jest.fn(),
   };
 
+  const mockPricingEngineService = {
+    calculatePrice: jest.fn().mockResolvedValue({
+      segments: [],
+      totalAmount: 20,
+      userTier: UserRole.MEMBER,
+      tierDiscount: 0.1,
+      calculatedAt: new Date().toISOString(),
+    }),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -71,6 +84,7 @@ describe('BookingsService', () => {
         { provide: StellarService, useValue: mockStellarService },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: ConflictDetectionService, useValue: mockConflictDetectionService },
+        { provide: PricingEngineService, useValue: mockPricingEngineService },
       ],
     }).compile();
 
@@ -103,14 +117,14 @@ describe('BookingsService', () => {
       mockManager.create.mockReturnValue(created);
       mockManager.save.mockResolvedValue(created);
 
-      const result = await service.create('user-1', dto);
+      const result = await service.create('user-1', dto, UserRole.MEMBER);
       expect(result).toEqual(created);
       expect(mockManager.save).toHaveBeenCalledWith(created);
     });
 
     it('throws 404 when workspace not found', async () => {
       mockManager.findOne.mockResolvedValueOnce(null);
-      await expect(service.create('user-1', dto)).rejects.toThrow(NotFoundException);
+      await expect(service.create('user-1', dto, UserRole.MEMBER)).rejects.toThrow(NotFoundException);
     });
 
     it('throws 409 when overlapping confirmed booking exists', async () => {
@@ -121,7 +135,7 @@ describe('BookingsService', () => {
       ));
       mockConflictDetectionService.hasConflict.mockResolvedValue({ reason: 'Overlap' });
 
-      await expect(service.create('user-1', dto)).rejects.toThrow(ConflictException);
+      await expect(service.create('user-1', dto, UserRole.MEMBER)).rejects.toThrow(ConflictException);
     });
 
     it('does not throw when confirmed booking does not overlap', async () => {
@@ -135,7 +149,7 @@ describe('BookingsService', () => {
       mockManager.create.mockReturnValue(created);
       mockManager.save.mockResolvedValue(created);
 
-      await expect(service.create('user-1', dto)).resolves.toEqual(created);
+      await expect(service.create('user-1', dto, UserRole.MEMBER)).resolves.toEqual(created);
     });
   });
 
