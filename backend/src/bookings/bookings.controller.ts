@@ -3,46 +3,69 @@ import {
   Post,
   Get,
   Patch,
+  Delete,
   Body,
   Param,
   UseGuards,
   Request,
 } from '@nestjs/common';
-import { Request as ExpressRequest } from 'express';
 import {
   ApiTags,
   ApiOperation,
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiBody,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { BookingsService } from './bookings.service';
+import { CancellationPolicyService } from './cancellation-policy.service';
 import { CreateBookingDto, UpdateBookingDto } from './bookings.dto';
+import {
+  CreateCancellationPolicyDto,
+  UpdateCancellationPolicyDto,
+} from './cancellation-policy.dto';
+import { WorkspaceType } from '../workspaces/workspace.entity';
 
 @ApiTags('bookings')
 @ApiBearerAuth('bearer')
 @Controller({ version: '1', path: 'bookings' })
 export class BookingsController {
-  constructor(private service: BookingsService) {}
+  constructor(
+    private service: BookingsService,
+    private cancellationPolicyService: CancellationPolicyService,
+  ) {}
+
+  // ── Bookings ───────────────────────────────────────────────────────────────
 
   @Post()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({
-    summary: 'Create a new booking',
-    description: `Creates a new booking.
-    
-Conflict Rules:
+    summary: 'Create a new booking (or recurring series)',
+    description: `Creates a new booking or a recurring series.
+
+**Single booking:** Omit \`recurrenceRule\`.
+
+**Recurring series:** Include an RFC 5545 RRULE string in \`recurrenceRule\`.
+- Supported frequencies: DAILY, WEEKLY, MONTHLY, YEARLY
+- Maximum 52 instances per series (1 year of weekly bookings)
+- All instances are created atomically — if any instance conflicts, the entire series is rejected
+- Examples:
+  - Weekly for 4 weeks: \`"FREQ=WEEKLY;COUNT=4"\`
+  - Biweekly for 6 months: \`"FREQ=WEEKLY;INTERVAL=2;UNTIL=20251231T000000Z"\`
+  - Monthly for 3 months: \`"FREQ=MONTHLY;COUNT=3"\`
+
+**Conflict Rules:**
 | Condition | Description |
 |-----------|-------------|
 | Maintenance Window | The requested time falls within an admin-set maintenance window |
 | Capacity Limits | The requested time exceeds the maximum capacity of the workspace |
-| Overlapping Time | For a single capacity workspace, another booking already occupies the time range |`
+| Overlapping Time | For a single-capacity workspace, another booking already occupies the time range |`,
   })
-  @ApiResponse({ status: 201, description: 'Booking created successfully' })
+  @ApiResponse({ status: 201, description: 'Booking (or series) created successfully' })
   @ApiResponse({
     status: 409,
     description: 'Workspace booking conflict detected',
@@ -60,26 +83,26 @@ Conflict Rules:
               type: 'object',
               properties: {
                 startTime: { type: 'string', format: 'date-time' },
-                endTime: { type: 'string', format: 'date-time' }
-              }
-            }
-          }
-        }
-      }
-    }
+                endTime: { type: 'string', format: 'date-time' },
+              },
+            },
+          },
+        },
+      },
+    },
   })
-   create(@Request() req: any, @Body() dto: CreateBookingDto) {
-     return this.service.create(req.user.id, dto);
-   }
+  create(@Request() req: any, @Body() dto: CreateBookingDto) {
+    return this.service.create(req.user.id, dto);
+  }
 
   @Get()
   @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Get all bookings (user sees own, admin sees all)' })
   @ApiResponse({ status: 200, description: 'Bookings retrieved successfully' })
-   findAll(@Request() req: any) {
-     const isAdmin = req.user.role === 'admin';
-     return this.service.findAll(isAdmin ? undefined : req.user.id, isAdmin);
-   }
+  findAll(@Request() req: any) {
+    const isAdmin = req.user.role === 'admin';
+    return this.service.findAll(isAdmin ? undefined : req.user.id, isAdmin);
+  }
 
   @Get(':id')
   @ApiOperation({ summary: 'Get booking by ID' })
@@ -89,10 +112,29 @@ Conflict Rules:
     return this.service.findById(id);
   }
 
+  @Get('workspace/:workspaceId')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get bookings for a workspace' })
+  @ApiParam({ name: 'workspaceId', type: String, description: 'Workspace ID' })
+  @ApiResponse({ status: 200, description: 'Workspace bookings retrieved successfully' })
+  findByWorkspace(@Param('workspaceId') workspaceId: string) {
+    return this.service.findByWorkspace(workspaceId);
+  }
+
+  @Get('series/:seriesId')
+  @UseGuards(JwtAuthGuard)
+  @ApiOperation({ summary: 'Get all instances of a recurring series' })
+  @ApiParam({ name: 'seriesId', type: String, description: 'Series UUID' })
+  @ApiResponse({ status: 200, description: 'Series instances retrieved successfully' })
+  @ApiResponse({ status: 404, description: 'Series not found' })
+  findBySeries(@Param('seriesId') seriesId: string) {
+    return this.service.findBySeries(seriesId);
+  }
+
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN)
-  @ApiOperation({ summary: 'Confirm booking' })
+  @ApiOperation({ summary: 'Confirm booking (admin only)' })
   @ApiParam({ name: 'id', type: String, description: 'Booking ID' })
   @ApiResponse({ status: 200, description: 'Booking confirmed successfully' })
   confirm(@Param('id') id: string) {
@@ -101,19 +143,127 @@ Conflict Rules:
 
   @Patch(':id/cancel')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Cancel booking' })
-  @ApiParam({ name: 'id', type: String, description: 'Booking ID' })
-  @ApiResponse({ status: 200, description: 'Booking cancelled successfully' })
-   cancel(@Param('id') id: string, @Request() req: any) {
-     return this.service.cancel(id, req.user.id);
-   }
+  @ApiOperation({
+    summary: 'Cancel a single booking',
+    description: `Cancels a booking and evaluates the refund based on the cancellation policy.
 
-  @Get('workspace/:workspaceId')
+**Refund Policy (default — override per workspace type via admin endpoints):**
+| Hours before start | Refund |
+|--------------------|--------|
+| ≥ 24 h | 100% (full refund) |
+| < 24 h | 0% (no refund) |
+
+The \`refundAmount\` is stored on the booking record.`,
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Booking ID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Booking cancelled. Response includes refundAmount.',
+  })
+  cancel(@Param('id') id: string, @Request() req: any) {
+    return this.service.cancel(id, req.user.id);
+  }
+
+  @Delete('series/:seriesId')
   @UseGuards(JwtAuthGuard)
-  @ApiOperation({ summary: 'Get bookings for a workspace' })
-  @ApiParam({ name: 'workspaceId', type: String, description: 'Workspace ID' })
-  @ApiResponse({ status: 200, description: 'Workspace bookings retrieved successfully' })
-  findByWorkspace(@Param('workspaceId') workspaceId: string) {
-    return this.service.findByWorkspace(workspaceId);
+  @ApiOperation({
+    summary: 'Cancel all future instances of a recurring series',
+    description: `Cancels all future instances (startTime > now) of a recurring series.
+Past instances are preserved. Each cancelled instance has its refund amount evaluated
+and stored according to the cancellation policy.`,
+  })
+  @ApiParam({ name: 'seriesId', type: String, description: 'Series UUID' })
+  @ApiResponse({
+    status: 200,
+    description: 'Future series instances cancelled. Past instances preserved.',
+    schema: {
+      type: 'object',
+      properties: {
+        cancelledCount: { type: 'number', example: 3 },
+        preservedCount: { type: 'number', example: 1 },
+        message: { type: 'string', example: 'Cancelled 3 future instance(s). Past instances preserved.' },
+      },
+    },
+  })
+  @ApiResponse({ status: 403, description: 'Not authorized to cancel this series' })
+  @ApiResponse({ status: 404, description: 'Series not found' })
+  cancelSeries(@Param('seriesId') seriesId: string, @Request() req: any) {
+    return this.service.cancelSeries(seriesId, req.user.id);
+  }
+
+  // ── Cancellation Policies (admin) ──────────────────────────────────────────
+
+  @Get('policies/cancellation')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'List all cancellation policies (admin only)',
+    description: `Returns all configured cancellation policies per workspace type.
+
+**Refund Bracket Formula:**
+\`\`\`
+refundAmount = totalAmount × (refundPercent / 100)
+\`\`\`
+
+**Default fallback** (when no policy is configured for a workspace type):
+- Full refund if cancelled > 24 h before start
+- No refund otherwise`,
+  })
+  @ApiResponse({ status: 200, description: 'Cancellation policies retrieved' })
+  listPolicies() {
+    return this.cancellationPolicyService.findAll();
+  }
+
+  @Post('policies/cancellation')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Create a cancellation policy for a workspace type (admin only)',
+    description: `Creates a refund policy for a specific workspace type.
+One policy per workspace type. Policy changes do NOT retroactively affect existing bookings.`,
+  })
+  @ApiResponse({ status: 201, description: 'Policy created' })
+  @ApiResponse({ status: 409, description: 'Policy already exists for this workspace type' })
+  createPolicy(@Body() dto: CreateCancellationPolicyDto) {
+    return this.cancellationPolicyService.create(dto);
+  }
+
+  @Patch('policies/cancellation/:workspaceType')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Update a cancellation policy (admin only)',
+    description: 'Updates an existing cancellation policy. Changes apply to future cancellations only.',
+  })
+  @ApiParam({
+    name: 'workspaceType',
+    enum: WorkspaceType,
+    description: 'Workspace type to update policy for',
+  })
+  @ApiResponse({ status: 200, description: 'Policy updated' })
+  @ApiResponse({ status: 404, description: 'Policy not found' })
+  updatePolicy(
+    @Param('workspaceType') workspaceType: WorkspaceType,
+    @Body() dto: UpdateCancellationPolicyDto,
+  ) {
+    return this.cancellationPolicyService.update(workspaceType, dto);
+  }
+
+  @Delete('policies/cancellation/:workspaceType')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @ApiOperation({
+    summary: 'Delete a cancellation policy (admin only)',
+    description: 'Removes the policy. The default fallback policy will apply after deletion.',
+  })
+  @ApiParam({
+    name: 'workspaceType',
+    enum: WorkspaceType,
+    description: 'Workspace type to remove policy for',
+  })
+  @ApiResponse({ status: 200, description: 'Policy deleted' })
+  @ApiResponse({ status: 404, description: 'Policy not found' })
+  removePolicy(@Param('workspaceType') workspaceType: WorkspaceType) {
+    return this.cancellationPolicyService.remove(workspaceType);
   }
 }
