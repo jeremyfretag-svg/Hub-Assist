@@ -5,10 +5,11 @@ import { v4 as uuidv4 } from 'uuid';
 import { DateTime } from 'luxon';
 import { Attendance, AttendanceAction } from './attendance.entity';
 import { ClockInDto, ClockOutDto, AttendanceSummaryQueryDto, isValidIANAZone } from './attendance.dto';
+import { CursorPaginationQueryDto } from '../common/pagination/dto/cursor-pagination-query.dto';
+import { encodeCursor, decodeCursor } from '../common/pagination/utils/cursor.util';
 
-// ── Anomaly thresholds ────────────────────────────────────────────────────────
-const ANOMALY_SHORT_SECONDS = 5 * 60;        // < 5 minutes
-const ANOMALY_LONG_SECONDS  = 14 * 60 * 60;  // > 14 hours
+const ANOMALY_SHORT_SECONDS = 5 * 60;
+const ANOMALY_LONG_SECONDS  = 14 * 60 * 60;
 
 export type AnomalyFlag = 'short' | 'long' | null;
 
@@ -22,7 +23,7 @@ export interface SessionSummary {
 }
 
 export interface BucketEntry {
-  bucket: string;          // e.g. "2026-05-30" (daily), "2026-W22" (weekly), "2026-05" (monthly)
+  bucket: string;
   sessions: number;
   totalDurationSeconds: number;
   avgDurationSeconds: number;
@@ -129,18 +130,53 @@ export class AttendanceService {
     };
   }
 
-  // ── My attendance (paginated) ─────────────────────────────────────────────
+  // ── My attendance (cursor-paginated) ─────────────────────────────────────
 
-  async getMyAttendance(userId: string, page: number = 1, limit: number = 20) {
-    const skip = (page - 1) * limit;
-    const [records, total] = await this.attendanceRepository.findAndCount({
+  async getMyAttendance(userId: string, query: CursorPaginationQueryDto) {
+    const limit = query.limit ?? 20;
+
+    if (query.cursor) {
+      let cursorPayload: { timestamp: string; id: string };
+      try {
+        cursorPayload = decodeCursor(query.cursor);
+      } catch {
+        throw new BadRequestException('Invalid cursor token');
+      }
+
+      const records = await this.attendanceRepository
+        .createQueryBuilder('a')
+        .where('a.userId = :userId', { userId })
+        .andWhere(
+          '(a.timestamp < :ts OR (a.timestamp = :ts AND a.id < :id))',
+          { ts: new Date(cursorPayload.timestamp), id: cursorPayload.id },
+        )
+        .orderBy('a.timestamp', 'DESC')
+        .addOrderBy('a.id', 'DESC')
+        .take(limit + 1)
+        .getMany();
+
+      const hasMore = records.length > limit;
+      const data = hasMore ? records.slice(0, limit) : records;
+      const nextCursor = hasMore && data.length > 0
+        ? encodeCursor({ timestamp: data[data.length - 1].timestamp.toISOString(), id: data[data.length - 1].id })
+        : null;
+
+      return { data, nextCursor, hasMore };
+    }
+
+    const records = await this.attendanceRepository.find({
       where: { userId },
-      order: { timestamp: 'DESC' },
-      skip,
-      take: limit,
+      order: { timestamp: 'DESC', id: 'DESC' },
+      take: limit + 1,
     });
 
-    return { records, total, page, limit, pages: Math.ceil(total / limit) };
+    const hasMore = records.length > limit;
+    const data = hasMore ? records.slice(0, limit) : records;
+    const nextCursor = hasMore && data.length > 0
+      ? encodeCursor({ timestamp: data[data.length - 1].timestamp.toISOString(), id: data[data.length - 1].id })
+      : null;
+
+    return { data, nextCursor, hasMore };
   }
 
   // ── User attendance (admin, paginated) ────────────────────────────────────

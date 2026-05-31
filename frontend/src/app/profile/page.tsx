@@ -8,6 +8,7 @@ import { Camera, Save, Lock } from "lucide-react";
 import { api } from "@/lib/apiClient";
 import { useAuthStore } from "@/lib/store/authStore";
 import { useToast } from "@/components/ui/ToastProvider";
+import { useUpdateProfile } from "@/hooks/useUpdateProfile";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 
@@ -29,9 +30,9 @@ type ProfileFormData = z.infer<typeof profileSchema>;
 type PasswordFormData = z.infer<typeof passwordSchema>;
 
 export default function ProfilePage() {
-  const { user, token, updateUser } = useAuthStore();
+  const { user, updateUser } = useAuthStore();
   const { showToast } = useToast();
-  const [isUpdatingProfile, setIsUpdatingProfile] = useState(false);
+  const updateProfileMutation = useUpdateProfile();
   const [isChangingPassword, setIsChangingPassword] = useState(false);
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -48,24 +49,11 @@ export default function ProfilePage() {
     resolver: zodResolver(passwordSchema),
   });
 
-  const handleProfileSubmit = async (data: ProfileFormData) => {
-    if (!token || !user) return;
-
-    setIsUpdatingProfile(true);
-    try {
-      await api.updateUser(user.id, data);
-      updateUser(data);
-      showToast("success", "Profile updated successfully");
-    } catch {
-      showToast("error", "Failed to update profile");
-    } finally {
-      setIsUpdatingProfile(false);
-    }
+  const handleProfileSubmit = (data: ProfileFormData) => {
+    updateProfileMutation.mutate(data);
   };
 
   const handlePasswordSubmit = async (data: PasswordFormData) => {
-    if (!token) return;
-
     setIsChangingPassword(true);
     try {
       await api.changePassword({
@@ -91,7 +79,7 @@ export default function ProfilePage() {
   };
 
   const handleAvatarUpload = async () => {
-    if (!token || !user || !selectedFile) return;
+    if (!user || !selectedFile) return;
 
     try {
       const response = await api.uploadProfilePicture(user.id, selectedFile);
@@ -180,8 +168,8 @@ export default function ProfilePage() {
                 </p>
               )}
             </div>
-            <Button type="submit" disabled={isUpdatingProfile}>
-              {isUpdatingProfile ? "Updating..." : "Update Profile"}
+            <Button type="submit" disabled={updateProfileMutation.isPending}>
+              {updateProfileMutation.isPending ? "Updating..." : "Update Profile"}
             </Button>
           </form>
         </div>
