@@ -15,6 +15,7 @@ import {
   ApiBearerAuth,
   ApiResponse,
   ApiParam,
+  ApiHeader,
 } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -42,10 +43,24 @@ Conflict Rules:
 | Capacity Limits | The requested time exceeds the maximum capacity of the workspace |
 | Overlapping Time | For a single capacity workspace, another booking already occupies the time range |`
   })
+  @ApiHeader({
+    name: 'X-Idempotency-Key',
+    description:
+      'Client-generated unique key (UUID v4 recommended) that prevents duplicate bookings ' +
+      'caused by network retries or UI double-submits. ' +
+      'The same key scoped to the same user returns the original response for up to 5 minutes. ' +
+      'Must be 1–128 printable ASCII characters with no whitespace. **Required.**',
+    required: true,
+    schema: { type: 'string', example: '550e8400-e29b-41d4-a716-446655440000' },
+  })
   @ApiResponse({ status: 201, description: 'Booking created successfully' })
   @ApiResponse({
+    status: 200,
+    description: 'Duplicate request — original response replayed (idempotent)',
+  })
+  @ApiResponse({
     status: 409,
-    description: 'Workspace booking conflict detected',
+    description: 'Workspace booking conflict detected OR concurrent duplicate key in-flight',
     schema: {
       type: 'object',
       properties: {
@@ -67,6 +82,18 @@ Conflict Rules:
         }
       }
     }
+  })
+  @ApiResponse({
+    status: 422,
+    description: 'Missing or malformed X-Idempotency-Key header',
+    schema: {
+      type: 'object',
+      properties: {
+        statusCode: { type: 'number', example: 422 },
+        message: { type: 'string', example: 'X-Idempotency-Key header is required for this endpoint' },
+        error: { type: 'string', example: 'Unprocessable Entity' },
+      },
+    },
   })
    create(@Request() req: any, @Body() dto: CreateBookingDto) {
      return this.service.create(req.user.id, dto);
