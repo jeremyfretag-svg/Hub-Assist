@@ -17,9 +17,16 @@ import { ValidateUserProvider } from './providers/validate-user.provider';
 import { ForgotPasswordProvider } from './providers/forgot-password.provider';
 import { ResetPasswordProvider } from './providers/reset-password.provider';
 import { ChangePasswordProvider } from './providers/change-password.provider';
+import { UserSubscriber } from './subscribers/user-subscriber';
+import { Booking } from '../bookings/booking.entity';
+import { RefreshToken } from '../auth/refresh-token.entity';
+import { Attendance } from '../attendance/attendance.entity';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule],
+  imports: [
+    TypeOrmModule.forFeature([User, Booking, RefreshToken, Attendance]),
+    CloudinaryModule,
+  ],
   providers: [
     UsersService,
     CreateUserProvider,
@@ -35,6 +42,7 @@ import { ChangePasswordProvider } from './providers/change-password.provider';
     ForgotPasswordProvider,
     ResetPasswordProvider,
     ChangePasswordProvider,
+    UserSubscriber,
   ],
   controllers: [UsersController],
   exports: [UsersService],

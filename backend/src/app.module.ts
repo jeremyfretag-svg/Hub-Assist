@@ -5,6 +5,7 @@ import { APP_GUARD } from '@nestjs/core';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { WinstonModule } from 'nest-winston';
 import { CacheModule } from '@nestjs/cache-manager';
+import { ScheduleModule } from '@nestjs/schedule';
 import { winstonConfig } from './config/logger.config';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
@@ -20,6 +21,9 @@ import { HealthModule } from './health/health.module';
 import { HubsModule } from './hubs/hubs.module';
 import { AnalyticsModule } from './analytics/analytics.module';
 import { NotificationsModule } from './notifications/notifications.module';
+import { OutboxModule } from './outbox/outbox.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
+import { AuditLogModule } from './audit/audit-log.module';
 import appConfig from './config/app.config';
 import databaseConfig from './config/database.config';
 import { validationSchema } from './config/validation.schema';
@@ -45,6 +49,7 @@ import { RolesGuard } from './common/guards/roles.guard';
     }),
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60_000, limit: 10 }]),
     CacheModule.register({ isGlobal: true }),
+    ScheduleModule.forRoot(),
     AuthModule,
     UsersModule,
     ContactModule,
@@ -59,6 +64,9 @@ import { RolesGuard } from './common/guards/roles.guard';
     HubsModule,
     AnalyticsModule,
     NotificationsModule,
+    OutboxModule,
+    WebhooksModule,
+    AuditLogModule.forRoot(),
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

@@ -6,6 +6,7 @@ import {
   Body,
   Param,
   UseGuards,
+  UseInterceptors,
   Request,
 } from '@nestjs/common';
 import { Request as ExpressRequest } from 'express';
@@ -22,6 +23,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from '../users/user.entity';
 import { BookingsService } from './bookings.service';
 import { CreateBookingDto, UpdateBookingDto } from './bookings.dto';
+import { Audit } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 
 @ApiTags('bookings')
 @ApiBearerAuth('bearer')
@@ -91,11 +94,14 @@ Conflict Rules:
 
   @Patch(':id/confirm')
   @UseGuards(JwtAuthGuard, RolesGuard)
+  @UseInterceptors(AuditInterceptor)
   @Roles(UserRole.ADMIN)
+  @Audit('booking.confirmed')
   @ApiOperation({ summary: 'Confirm booking' })
   @ApiParam({ name: 'id', type: String, description: 'Booking ID' })
   @ApiResponse({ status: 200, description: 'Booking confirmed successfully' })
-  confirm(@Param('id') id: string) {
+  async confirm(@Param('id') id: string, @Request() req: any) {
+    req.auditBefore = await this.service.findById(id);
     return this.service.confirm(id);
   }
 

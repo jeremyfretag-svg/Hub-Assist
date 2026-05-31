@@ -7,8 +7,11 @@ import { Workspace } from '../workspaces/workspace.entity';
 import { StellarService } from '../stellar/stellar.service';
 import { ConflictDetectionService } from './conflict-detection.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { OutboxService } from '../outbox/outbox.service';
+import { WebhookService } from '../webhooks/webhook.service';
+import { AuditLogService } from '../audit/audit-log.service';
 
-const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true };
+const mockWorkspace = { id: 'ws-1', name: 'Hot Desk', isActive: true, pricePerHour: 10 };
 
 const mockBooking = (overrides: Partial<Booking> = {}): Booking => ({
   id: 'booking-1',
@@ -62,6 +65,18 @@ describe('BookingsService', () => {
     hasConflict: jest.fn(),
   };
 
+  const mockOutboxService = {
+    create: jest.fn(),
+  };
+
+  const mockWebhookService = {
+    enqueue: jest.fn(),
+  };
+
+  const mockAuditLogService = {
+    log: jest.fn(),
+  };
+
   beforeEach(async () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -71,6 +86,9 @@ describe('BookingsService', () => {
         { provide: StellarService, useValue: mockStellarService },
         { provide: NotificationsService, useValue: mockNotificationsService },
         { provide: ConflictDetectionService, useValue: mockConflictDetectionService },
+        { provide: OutboxService, useValue: mockOutboxService },
+        { provide: WebhookService, useValue: mockWebhookService },
+        { provide: AuditLogService, useValue: mockAuditLogService },
       ],
     }).compile();
 
@@ -106,6 +124,7 @@ describe('BookingsService', () => {
       const result = await service.create('user-1', dto);
       expect(result).toEqual(created);
       expect(mockManager.save).toHaveBeenCalledWith(created);
+      expect(mockOutboxService.create).toHaveBeenCalled();
     });
 
     it('throws 404 when workspace not found', async () => {
@@ -172,34 +191,24 @@ describe('BookingsService', () => {
   // ── confirm ────────────────────────────────────────────────────────────────
 
   describe('confirm', () => {
-    it('confirms a pending booking with valid stellar tx', async () => {
+    it('confirms a pending booking and writes an outbox event without calling Stellar synchronously', async () => {
       const booking = mockBooking({ stellarTxHash: 'tx-hash-123' });
-      mockBookingRepo.findOne.mockResolvedValue(booking);
-      mockStellarService.verifyTransaction.mockResolvedValue({ status: 'SUCCESS' });
-      mockBookingRepo.save.mockResolvedValue({ ...booking, status: BookingStatus.CONFIRMED });
+      mockManager.findOne.mockResolvedValue(booking);
+      mockManager.save.mockResolvedValue({ ...booking, status: BookingStatus.CONFIRMED });
 
       const result = await service.confirm('booking-1');
       expect(result.status).toBe(BookingStatus.CONFIRMED);
+      expect(mockStellarService.verifyTransaction).not.toHaveBeenCalled();
+      expect(mockOutboxService.create).toHaveBeenCalled();
     });
 
     it('throws 404 when booking not found', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(null);
+      mockManager.findOne.mockResolvedValue(null);
       await expect(service.confirm('unknown')).rejects.toThrow(NotFoundException);
     });
 
     it('throws 400 when booking is not pending', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ status: BookingStatus.CONFIRMED }));
-      await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws 400 when no stellarTxHash provided', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ stellarTxHash: null as any }));
-      await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
-    });
-
-    it('throws 400 when stellar transaction verification fails', async () => {
-      mockBookingRepo.findOne.mockResolvedValue(mockBooking({ stellarTxHash: 'tx-hash-123' }));
-      mockStellarService.verifyTransaction.mockResolvedValue({ status: 'FAILED' });
+      mockManager.findOne.mockResolvedValue(mockBooking({ status: BookingStatus.CONFIRMED }));
       await expect(service.confirm('booking-1')).rejects.toThrow(BadRequestException);
     });
   });

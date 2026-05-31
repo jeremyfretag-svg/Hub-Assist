@@ -74,4 +74,11 @@ export class EmailService {
     if (!bookingDetails) throw new InternalServerErrorException('Missing required variable: bookingDetails');
     await this.sendTemplate(email, 'Booking Confirmation', 'booking-confirmation', bookingDetails);
   }
+
+  async sendWorkspaceBookingCancelled(email: string, bookingDetails: any): Promise<void> {
+    if (!bookingDetails) throw new InternalServerErrorException('Missing required variable: bookingDetails');
+    await this.sendTemplate(email, 'Booking Cancelled', 'welcome', {
+      message: `Your booking for ${bookingDetails.workspaceName} was cancelled because the workspace is no longer available.`,
+    });
+  }
 }

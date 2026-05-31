@@ -32,6 +32,8 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { UserRole } from './user.entity';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
+import { Audit } from '../audit/audit.decorator';
+import { AuditInterceptor } from '../audit/audit.interceptor';
 
 @ApiTags('users')
 @ApiBearerAuth('bearer')
@@ -98,10 +100,13 @@ export class UsersController {
 
   @Patch(':id/role')
   @Roles(UserRole.ADMIN)
+  @UseInterceptors(AuditInterceptor)
+  @Audit('user.role_updated')
   @ApiOperation({ summary: 'Update user role (admin only)' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User role updated successfully' })
-  async updateRole(@Param('id') id: string, @Body('role') role: UserRole) {
+  async updateRole(@Param('id') id: string, @Body('role') role: UserRole, @Req() req: any) {
+    req.auditBefore = await this.usersService.findById(id);
     const result = await this.usersService.update(id, { role });
     await this.cacheManager.del(this.userCacheKey(id));
     return result;
