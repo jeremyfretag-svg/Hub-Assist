@@ -17,9 +17,10 @@ import { ValidateUserProvider } from './providers/validate-user.provider';
 import { ForgotPasswordProvider } from './providers/forgot-password.provider';
 import { ResetPasswordProvider } from './providers/reset-password.provider';
 import { ChangePasswordProvider } from './providers/change-password.provider';
+import { PasswordPolicyModule } from '../auth/password-policy/password-policy.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule],
+  imports: [TypeOrmModule.forFeature([User]), CloudinaryModule, PasswordPolicyModule],
   providers: [
     UsersService,
     CreateUserProvider,

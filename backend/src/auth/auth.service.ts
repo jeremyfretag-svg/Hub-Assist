@@ -8,6 +8,7 @@ import { RefreshTokenRepository } from './refresh-token.repository';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { NotificationsService } from '../notifications/notifications.service';
+import { PasswordPolicyService } from './password-policy/password-policy.service';
 
 @Injectable()
 export class AuthService {
@@ -19,6 +20,7 @@ export class AuthService {
     private forgotPasswordProvider: ForgotPasswordProvider,
     private resetPasswordProvider: ResetPasswordProvider,
     private notificationsService: NotificationsService,
+    private passwordPolicyService: PasswordPolicyService,
   ) {}
 
   private generateOtp(): string {
@@ -48,6 +50,14 @@ export class AuthService {
   }
 
   async register(email: string, password: string, firstName?: string, lastName?: string) {
+    const policyResult = await this.passwordPolicyService.validate(password);
+    if (!policyResult.valid) {
+      throw new BadRequestException({
+        message: 'Password does not meet security requirements',
+        violations: policyResult.violations,
+      });
+    }
+
     const passwordHash = await bcrypt.hash(password, 10);
     const otp = this.generateOtp();
     const otpHash = await this.hashOtp(otp);
@@ -241,10 +251,12 @@ export class AuthService {
        throw new BadRequestException('Invalid OTP');
      }
 
-     if (!this.validatePasswordStrength(newPassword)) {
-       throw new BadRequestException(
-         'Password must be at least 8 characters and contain uppercase, lowercase, and numbers',
-       );
+     const policyResult = await this.passwordPolicyService.validate(newPassword);
+     if (!policyResult.valid) {
+       throw new BadRequestException({
+         message: 'Password does not meet security requirements',
+         violations: policyResult.violations,
+       });
      }
 
      const passwordHash = await bcrypt.hash(newPassword, 10);
