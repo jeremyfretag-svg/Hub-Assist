@@ -26,6 +26,7 @@ import {
   ApiQuery,
 } from '@nestjs/swagger';
 import { UsersService } from './users.service';
+import { UpdateUserDto } from './users.dto';
 import { FileValidationPipe } from '../common/pipes/file-validation.pipe';
 import { CloudinaryService } from '../cloudinary/cloudinary.service';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -94,7 +95,7 @@ export class UsersController {
   @ApiOperation({ summary: 'Update user' })
   @ApiParam({ name: 'id', type: String, description: 'User ID' })
   @ApiResponse({ status: 200, description: 'User updated successfully' })
-  async update(@Param('id') id: string, @Body() data: any) {
+  async update(@Param('id') id: string, @Body() data: UpdateUserDto) {
     const result = await this.usersService.update(id, data);
     await this.cacheManager.del(this.userCacheKey(id));
     return result;
