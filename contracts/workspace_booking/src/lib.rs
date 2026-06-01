@@ -23,6 +23,7 @@ enum DataKey {
     BookingCount,
     Booking(u64),
     MemberBookings(Address),
+    WorkspaceBookings(u32),
 }
 
 #[contract]
@@ -109,21 +110,26 @@ impl WorkspaceBooking {
             return Err(ContractError::InsufficientPayment);
         }
 
-        // Check overlapping bookings
-        let booking_count: u64 = storage.get(&DataKey::BookingCount).unwrap_or(0);
-        for i in 1..=booking_count {
-            if let Some(b) = storage.get::<DataKey, Booking>(&DataKey::Booking(i)) {
-                if b.workspace_id == workspace_id
-                    && b.status != BookingStatus::Cancelled
-                    && b.start_time < end_time
-                    && start_time < b.end_time
-                {
+        // Atomic overlap prevention: scan all active bookings for this workspace
+        // Overlap predicate: !(end_time <= existing.start_time || start_time >= existing.end_time)
+        let workspace_bookings: Vec<u64> = storage
+            .get(&DataKey::WorkspaceBookings(workspace_id))
+            .unwrap_or(vec![&env]);
+        
+        for booking_id in workspace_bookings.iter() {
+            if let Some(b) = storage.get::<DataKey, Booking>(&DataKey::Booking(booking_id)) {
+                // Skip cancelled bookings
+                if b.status == BookingStatus::Cancelled {
+                    continue;
+                }
+                // Check for time-range overlap
+                if !(end_time <= b.start_time || start_time >= b.end_time) {
                     return Err(ContractError::OverlappingBooking);
                 }
             }
         }
 
-        let id = booking_count + 1;
+        let id: u64 = storage.get(&DataKey::BookingCount).unwrap_or(0) + 1;
         let booking = Booking {
             id,
             member: member.clone(),
@@ -133,11 +139,20 @@ impl WorkspaceBooking {
             amount,
             status: BookingStatus::Pending,
             stellar_tx_hash,
+            applied_discount_bps: 0,
         };
 
         storage.set(&DataKey::Booking(id), &booking);
         storage.extend_ttl(&DataKey::Booking(id), LEDGER_TTL, LEDGER_TTL);
         storage.set(&DataKey::BookingCount, &id);
+
+        // Add booking to workspace bookings list
+        let mut workspace_bookings: Vec<u64> = storage
+            .get(&DataKey::WorkspaceBookings(workspace_id))
+            .unwrap_or(vec![&env]);
+        workspace_bookings.push_back(id);
+        storage.set(&DataKey::WorkspaceBookings(workspace_id), &workspace_bookings);
+        storage.extend_ttl(&DataKey::WorkspaceBookings(workspace_id), LEDGER_TTL, LEDGER_TTL);
 
         // Update member bookings list
         let mut member_bookings: Vec<u64> = storage
