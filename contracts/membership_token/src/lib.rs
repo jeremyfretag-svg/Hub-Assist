@@ -14,6 +14,7 @@ pub enum ContractError {
     InvalidExpiryDate  = 5,
     TokenRevoked       = 6,
     GracePeriodBlock   = 7,
+    BatchTooLarge      = 8,
 }
 
 #[contracttype]
@@ -155,16 +156,34 @@ impl MembershipTokenContract {
         params: Vec<IssueParams>,
     ) -> Result<Vec<u64>, ContractError> {
         Self::require_admin(&env, &admin)?;
-        // validate all first so a bad entry rolls back the whole tx
+        
+        // Validate batch size (max 50 to prevent timeout)
+        if params.len() > 50 {
+            return Err(ContractError::BatchTooLarge);
+        }
+        
+        // Validate all params first (fail fast before any tokens are issued)
         let now = env.ledger().timestamp();
         for p in params.iter() {
             if p.expiry_date <= now {
                 return Err(ContractError::InvalidExpiryDate);
             }
         }
+        
+        // Increment counter once by batch size
+        let batch_len = params.len() as u64;
+        let start_id: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::TokenCount)
+            .unwrap_or(0u64);
+        let next_id = start_id + batch_len;
+        env.storage().instance().set(&DataKey::TokenCount, &next_id);
+        
+        // Issue tokens with sequential IDs
         let mut ids = Vec::new(&env);
-        for p in params.iter() {
-            let id = Self::next_id(&env);
+        for (idx, p) in params.iter().enumerate() {
+            let id = start_id + (idx as u64) + 1;
             let token = MembershipToken {
                 id,
                 owner: p.owner.clone(),
@@ -174,7 +193,7 @@ impl MembershipTokenContract {
                 status: MembershipStatus::Active,
             };
             Self::save_token(&env, &token);
-            env.events().publish((symbol_short!("issue"), p.owner), id);
+            env.events().publish((symbol_short!("issue"), p.owner.clone()), id);
             ids.push_back(id);
         }
         Ok(ids)
