@@ -22,6 +22,14 @@ pub enum WorkspaceType {
 
 #[contracttype]
 #[derive(Clone, PartialEq, Debug)]
+pub enum WorkspaceState {
+    Available,
+    Unavailable { reason: String },
+    Maintenance { scheduled_return: u64 },
+}
+
+#[contracttype]
+#[derive(Clone, PartialEq, Debug)]
 pub enum UnavailabilityReason {
     UnderMaintenance,
     FullyBooked,
@@ -44,6 +52,7 @@ pub struct Workspace {
     pub capacity: u32,
     pub price_per_hour: i128,
     pub availability: WorkspaceAvailability,
+    pub state: WorkspaceState,
 }
 
 #[contracttype]
