@@ -104,15 +104,86 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  @Get('csrf-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Get CSRF token for state-mutating requests' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        csrfToken: { type: 'string', description: 'CSRF token to include in X-CSRF-Token header' },
+      },
+    },
+  })
+  async getCsrfToken(@Req() req: any) {
+    const csrfToken = await this.csrfService.generateToken(req.user.jti);
+    return { csrfToken };
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Logout user — immediately revokes the current access token' })
   @ApiResponse({ status: 200, description: 'Logout successful' })
-  logout(@Req() req: any) {
+  async logout(@Req() req: any) {
+    // Invalidate CSRF token on logout
+    if (req.user?.jti) {
+      await this.csrfService.invalidateToken(req.user.jti);
+    }
     // req.user is populated by JwtStrategy.validate()
     // Pass jti + exp so the access token is blacklisted in Redis immediately.
     return this.authService.logout(req.user.id, req.user.jti, req.user.exp);
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Logout from all devices — revokes all refresh tokens and broadcasts session termination' })
+  @ApiResponse({ status: 200, description: 'Logged out from all devices' })
+  async logoutAll(@Req() req: any) {
+    const result = await this.authService.logoutAll(req.user.id, req.user.jti, req.user.exp);
+    // Broadcast session revocation to all connected SSE clients
+    this.sessionBroadcastService.broadcastSessionRevocation(req.user.id);
+    return result;
+  }
+
+  @Get('session-events')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Server-Sent Events stream for session termination notifications' })
+  @ApiResponse({ status: 200, description: 'SSE stream established' })
+  @Sse()
+  sessionEvents(@Req() req: any): Observable<any> {
+    const userId = req.user.id;
+    const eventStream = this.sessionBroadcastService.getSessionEventStream(userId);
+
+    // Emit heartbeat every 30 seconds to keep connection alive
+    const heartbeat$ = interval(30000).pipe(
+      map(() => ({ data: { type: 'heartbeat', timestamp: new Date() } })),
+    );
+
+    // Merge event stream with heartbeat
+    return new Observable((subscriber) => {
+      const eventSub = eventStream.subscribe({
+        next: (event) => subscriber.next({ data: event }),
+        error: (err) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
+
+      const heartbeatSub = heartbeat$.subscribe({
+        next: (hb) => subscriber.next(hb),
+        error: (err) => subscriber.error(err),
+      });
+
+      return () => {
+        eventSub.unsubscribe();
+        heartbeatSub.unsubscribe();
+        this.sessionBroadcastService.cleanupSessionStream(userId);
+      };
+    });
   }
 
   @Post('forgot-password')
