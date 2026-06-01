@@ -23,6 +23,7 @@ enum DataKey {
     Escrow(u64),
     DepositorEscrows(Address),
     BeneficiaryEscrows(Address),
+    Paused,
 }
 
 #[contract]
@@ -36,6 +37,21 @@ impl PaymentEscrow {
         s.set(&DataKey::Admin, &admin);
         s.set(&DataKey::PaymentToken, &payment_token);
         s.set(&DataKey::DisputeWindow, &default_dispute_window);
+        env.storage().instance().set(&DataKey::Paused, &false);
+    }
+
+    pub fn pause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((soroban_sdk::symbol_short!("paused"),), admin);
+        Ok(())
+    }
+
+    pub fn unpause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((soroban_sdk::symbol_short!("unpaused"),), admin);
+        Ok(())
     }
 
     pub fn create_escrow(
@@ -45,6 +61,7 @@ impl PaymentEscrow {
         amount: i128,
         release_time: u64,
     ) -> Result<u64, ContractError> {
+        Self::require_not_paused(&env)?;
         depositor.require_auth();
 
         if amount <= 0 {
@@ -87,6 +104,7 @@ impl PaymentEscrow {
 
     /// Release funds to beneficiary. Callable by admin or beneficiary after release_time + dispute_window.
     pub fn release(env: Env, caller: Address, escrow_id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         caller.require_auth();
         let s = env.storage().persistent();
         let mut escrow: Escrow = s.get(&DataKey::Escrow(escrow_id)).ok_or(ContractError::EscrowNotFound)?;
@@ -121,6 +139,7 @@ impl PaymentEscrow {
 
     /// Refund depositor. Admin only.
     pub fn refund(env: Env, admin: Address, escrow_id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
         let s = env.storage().persistent();
         let mut escrow: Escrow = s.get(&DataKey::Escrow(escrow_id)).ok_or(ContractError::EscrowNotFound)?;
@@ -143,6 +162,7 @@ impl PaymentEscrow {
 
     /// Mark escrow as disputed. Depositor only, while still Active.
     pub fn dispute(env: Env, depositor: Address, escrow_id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         depositor.require_auth();
         let s = env.storage().persistent();
         let mut escrow: Escrow = s.get(&DataKey::Escrow(escrow_id)).ok_or(ContractError::EscrowNotFound)?;
@@ -176,6 +196,18 @@ impl PaymentEscrow {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    fn require_not_paused(env: &Env) -> Result<(), ContractError> {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            return Err(ContractError::Unauthorized); // Use Unauthorized as proxy for paused
+        }
+        Ok(())
+    }
 
     fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
         let admin: Address = env

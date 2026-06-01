@@ -23,6 +23,7 @@ enum DataKey {
     BookingCount,
     Booking(u64),
     MemberBookings(Address),
+    Paused,
 }
 
 #[contract]
@@ -35,6 +36,21 @@ impl WorkspaceBooking {
         let storage = env.storage().persistent();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::PaymentToken, &payment_token);
+        env.storage().instance().set(&DataKey::Paused, &false);
+    }
+
+    pub fn pause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin);
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((symbol_short!("paused"),), admin);
+        Ok(())
+    }
+
+    pub fn unpause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin);
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("unpaused"),), admin);
+        Ok(())
     }
 
     pub fn register_workspace(
@@ -45,6 +61,7 @@ impl WorkspaceBooking {
         capacity: u32,
         price_per_hour: i128,
     ) -> u32 {
+        Self::require_not_paused(&env);
         Self::require_admin(&env, &caller);
         let storage = env.storage().persistent();
         let id: u32 = storage.get(&DataKey::WorkspaceCount).unwrap_or(0u32) + 1;
@@ -68,6 +85,7 @@ impl WorkspaceBooking {
         workspace_id: u32,
         availability: WorkspaceAvailability,
     ) -> Result<(), ContractError> {
+        Self::require_not_paused(&env);
         Self::require_admin(&env, &caller);
         let storage = env.storage().persistent();
         let mut workspace: Workspace = storage
@@ -88,6 +106,7 @@ impl WorkspaceBooking {
         amount: i128,
         stellar_tx_hash: BytesN<32>,
     ) -> Result<u64, ContractError> {
+        Self::require_not_paused(&env);
         member.require_auth();
 
         if start_time >= end_time {
@@ -152,6 +171,7 @@ impl WorkspaceBooking {
     }
 
     pub fn confirm_booking(env: Env, booking_id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env);
         let admin: Address = env.storage().persistent().get(&DataKey::Admin).unwrap();
         admin.require_auth();
         let storage = env.storage().persistent();
@@ -172,6 +192,7 @@ impl WorkspaceBooking {
     }
 
     pub fn cancel(env: Env, caller: Address, booking_id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env);
         caller.require_auth();
         let storage = env.storage().persistent();
         let mut booking: Booking = storage
@@ -234,6 +255,17 @@ impl WorkspaceBooking {
     }
 
     // --- helpers ---
+
+    fn require_not_paused(env: &Env) {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            panic!("contract is paused");
+        }
+    }
 
     fn require_admin(env: &Env, caller: &Address) -> Address {
         let admin: Address = env

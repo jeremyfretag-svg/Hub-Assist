@@ -15,6 +15,7 @@ pub enum ContractError {
     TokenRevoked       = 6,
     GracePeriodBlock   = 7,
     BatchTooLarge      = 8,
+    ContractPaused     = 9,
 }
 
 #[contracttype]
@@ -42,6 +43,7 @@ pub enum DataKey {
     TokenCount,
     Token(u64),
     Admin,
+    Paused,
 }
 
 #[contracttype]
@@ -67,6 +69,21 @@ impl MembershipTokenContract {
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::Paused, &false);
+    }
+
+    pub fn pause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &true);
+        env.events().publish((symbol_short!("paused"),), admin);
+        Ok(())
+    }
+
+    pub fn unpause(env: Env, admin: Address) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage().instance().set(&DataKey::Paused, &false);
+        env.events().publish((symbol_short!("unpaused"),), admin);
+        Ok(())
     }
 
     // ── single ops ──────────────────────────────────────────────────────────
@@ -78,6 +95,7 @@ impl MembershipTokenContract {
         tier: u32,
         expiry_date: u64,
     ) -> Result<u64, ContractError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
         if expiry_date <= env.ledger().timestamp() {
             return Err(ContractError::InvalidExpiryDate);
@@ -97,6 +115,7 @@ impl MembershipTokenContract {
     }
 
     pub fn transfer_token(env: Env, id: u64, new_owner: Address) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         let mut token = Self::load_token(&env, id)?;
         token.owner.require_auth();
         match Self::compute_status(&env, &token) {
@@ -118,6 +137,7 @@ impl MembershipTokenContract {
         id: u64,
         new_expiry_date: u64,
     ) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
         let mut token = Self::load_token(&env, id)?;
         if token.status == MembershipStatus::Revoked {
@@ -131,6 +151,7 @@ impl MembershipTokenContract {
     }
 
     pub fn revoke_token(env: Env, admin: Address, id: u64) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
         let mut token = Self::load_token(&env, id)?;
         token.status = MembershipStatus::Revoked;
@@ -155,6 +176,7 @@ impl MembershipTokenContract {
         admin: Address,
         params: Vec<IssueParams>,
     ) -> Result<Vec<u64>, ContractError> {
+        Self::require_not_paused(&env)?;
         Self::require_admin(&env, &admin)?;
         
         // Validate batch size (max 50 to prevent timeout)
@@ -203,6 +225,7 @@ impl MembershipTokenContract {
         env: Env,
         params: Vec<TransferParams>,
     ) -> Result<(), ContractError> {
+        Self::require_not_paused(&env)?;
         for p in params.iter() {
             let mut token = Self::load_token(&env, p.id)?;
             token.owner.require_auth();
@@ -221,6 +244,18 @@ impl MembershipTokenContract {
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    fn require_not_paused(env: &Env) -> Result<(), ContractError> {
+        let paused: bool = env
+            .storage()
+            .instance()
+            .get(&DataKey::Paused)
+            .unwrap_or(false);
+        if paused {
+            return Err(ContractError::ContractPaused);
+        }
+        Ok(())
+    }
 
     fn require_admin(env: &Env, caller: &Address) -> Result<(), ContractError> {
         caller.require_auth();
