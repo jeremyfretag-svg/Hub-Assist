@@ -14,6 +14,7 @@ import { JwtStrategy } from './jwt.strategy';
 import { EmailService } from './email.service';
 import { RefreshToken } from './refresh-token.entity';
 import { WebAuthnCredential } from './webauthn-credential.entity';
+import { OAuthClient } from './oauth-client.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
 import { SessionBroadcastService } from './session-broadcast.service';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
@@ -23,8 +24,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { OtpRateLimitService } from './otp-rate-limit.service';
 import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
 import { PasswordPolicyModule } from './password-policy/password-policy.module';
-import { CsrfService } from './csrf.service';
-import { CsrfGuard } from './csrf.guard';
+import { OAuthService } from './oauth.service';
 
 @Module({
   imports: [
@@ -33,7 +33,7 @@ import { CsrfGuard } from './csrf.guard';
     NotificationsModule,
     TokenBlacklistModule,
     PasswordPolicyModule,
-    TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User]),
+    TypeOrmModule.forFeature([RefreshToken, WebAuthnCredential, User, OAuthClient]),
     JwtModule.registerAsync({
       imports: [ConfigModule],
       inject: [ConfigService],
@@ -54,10 +54,9 @@ import { CsrfGuard } from './csrf.guard';
     ForgotPasswordProvider,
     ResetPasswordProvider,
     OtpRateLimitService,
-    CsrfService,
-    CsrfGuard,
+    OAuthService,
   ],
   controllers: [AuthController, BiometricController, TotpController],
-  exports: [TotpService, SessionBroadcastService],
+  exports: [TotpService, OAuthService],
 })
 export class AuthModule {}

@@ -11,6 +11,8 @@ import {
   UseInterceptors,
   Inject,
   Req,
+  Sse,
+  MessageEvent,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -22,8 +24,10 @@ import {
 } from '@nestjs/swagger';
 import { CacheInterceptor, CacheKey, CacheTTL, CACHE_MANAGER } from '@nestjs/cache-manager';
 import { Cache } from 'cache-manager';
+import { Observable, interval, mergeMap } from 'rxjs';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 import { WorkspacesService } from './workspaces.service';
+import { OccupancyStreamService } from './occupancy-stream.service';
 import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 import { WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 import { Audit } from '../audit/audit.decorator';
@@ -37,7 +41,7 @@ const WORKSPACES_CACHE_KEY = 'workspaces';
 export class WorkspacesController {
   constructor(
     private service: WorkspacesService,
-    private capacityCheckService: CapacityCheckService,
+    private occupancyStreamService: OccupancyStreamService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -120,5 +124,31 @@ export class WorkspacesController {
     const result = await this.service.softDelete(id);
     await this.invalidateWorkspacesCache();
     return result;
+  }
+
+  // ── Real-time Occupancy Streaming ──────────────────────────────────────
+
+  @Sse(':id/occupancy/stream')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({
+    summary: 'Stream real-time workspace occupancy updates (Server-Sent Events)',
+    description: `Establishes an SSE connection that pushes occupancy updates when bookings are created, confirmed, or cancelled.
+    
+Supports Last-Event-ID header for client reconnection without missing events.
+Send retry: 5000 to guide client reconnection interval.`,
+  })
+  @ApiParam({ name: 'id', type: String, description: 'Workspace ID' })
+  @ApiResponse({ status: 200, description: 'SSE stream established' })
+  occupancyStream(@Param('id') workspaceId: string): Observable<MessageEvent> {
+    return interval(5000).pipe(
+      mergeMap(() =>
+        this.occupancyStreamService.getOccupancyUpdate(workspaceId).then((update) => ({
+          id: update.eventId,
+          data: update,
+          retry: 5000,
+        } as MessageEvent)),
+      ),
+    );
   }
 }
