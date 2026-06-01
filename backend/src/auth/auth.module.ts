@@ -22,6 +22,8 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { OtpRateLimitService } from './otp-rate-limit.service';
 import { TokenBlacklistModule } from '../common/modules/token-blacklist.module';
 import { PasswordPolicyModule } from './password-policy/password-policy.module';
+import { CsrfService } from './csrf.service';
+import { CsrfGuard } from './csrf.guard';
 
 @Module({
   imports: [
@@ -50,8 +52,10 @@ import { PasswordPolicyModule } from './password-policy/password-policy.module';
     ForgotPasswordProvider,
     ResetPasswordProvider,
     OtpRateLimitService,
+    CsrfService,
+    CsrfGuard,
   ],
   controllers: [AuthController, BiometricController, TotpController],
-  exports: [TotpService],
+  exports: [TotpService, CsrfService, CsrfGuard],
 })
 export class AuthModule {}
