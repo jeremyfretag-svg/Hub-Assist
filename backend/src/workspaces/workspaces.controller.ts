@@ -28,6 +28,7 @@ import { CreateWorkspaceDto, UpdateWorkspaceDto } from './workspaces.dto';
 import { WorkspaceType, WorkspaceAvailability } from './workspace.entity';
 import { Audit } from '../audit/audit.decorator';
 import { AuditInterceptor } from '../audit/audit.interceptor';
+import { CapacityCheckService } from '../bookings/capacity-check.service';
 
 const WORKSPACES_CACHE_KEY = 'workspaces';
 
@@ -36,6 +37,7 @@ const WORKSPACES_CACHE_KEY = 'workspaces';
 export class WorkspacesController {
   constructor(
     private service: WorkspacesService,
+    private capacityCheckService: CapacityCheckService,
     @Inject(CACHE_MANAGER) private cacheManager: Cache,
   ) {}
 
@@ -79,6 +81,18 @@ export class WorkspacesController {
   @ApiResponse({ status: 200, description: 'Workspace retrieved successfully' })
   findById(@Param('id') id: string) {
     return this.service.findById(id);
+  }
+
+  @Get(':id/availability')
+  @ApiOperation({ summary: 'Get hourly availability slots for a workspace on a given date' })
+  @ApiParam({ name: 'id', type: String, description: 'Workspace ID' })
+  @ApiQuery({ name: 'date', type: String, description: 'Date in YYYY-MM-DD format', example: '2026-06-01' })
+  @ApiResponse({ status: 200, description: 'Hourly availability slots retrieved successfully' })
+  async getAvailability(
+    @Param('id') id: string,
+    @Query('date') date: string,
+  ) {
+    return this.service.getHourlyAvailability(id, date);
   }
 
   @Patch(':id')

@@ -15,6 +15,7 @@ import { EmailService } from './email.service';
 import { RefreshToken } from './refresh-token.entity';
 import { WebAuthnCredential } from './webauthn-credential.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
+import { SessionBroadcastService } from './session-broadcast.service';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { User } from '../users/user.entity';
@@ -49,6 +50,7 @@ import { CsrfGuard } from './csrf.guard';
     JwtStrategy,
     EmailService,
     RefreshTokenRepository,
+    SessionBroadcastService,
     ForgotPasswordProvider,
     ResetPasswordProvider,
     OtpRateLimitService,
@@ -56,6 +58,6 @@ import { CsrfGuard } from './csrf.guard';
     CsrfGuard,
   ],
   controllers: [AuthController, BiometricController, TotpController],
-  exports: [TotpService, CsrfService, CsrfGuard],
+  exports: [TotpService, SessionBroadcastService],
 })
 export class AuthModule {}
