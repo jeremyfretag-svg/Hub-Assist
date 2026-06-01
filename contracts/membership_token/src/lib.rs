@@ -67,6 +67,7 @@ impl MembershipTokenContract {
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::GracePeriodDays, &30u64);
     }
 
     // ── single ops ──────────────────────────────────────────────────────────
@@ -332,15 +333,27 @@ impl MembershipTokenContract {
         if token.status == MembershipStatus::Revoked {
             return MembershipStatus::Revoked;
         }
-        if token.status == MembershipStatus::GracePeriod {
+        
+        let now = env.ledger().timestamp();
+        let grace_period_days: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::GracePeriodDays)
+            .unwrap_or(30u64);
+        let grace_period_secs = grace_period_days * 86_400;
+        
+        // Active if not yet expired
+        if now <= token.expiry_date {
+            return MembershipStatus::Active;
+        }
+        
+        // GracePeriod if within grace window
+        if now <= token.expiry_date + grace_period_secs {
             return MembershipStatus::GracePeriod;
         }
-        let now = env.ledger().timestamp();
-        if now > token.expiry_date {
-            MembershipStatus::Expired
-        } else {
-            MembershipStatus::Active
-        }
+        
+        // Expired if beyond grace period
+        MembershipStatus::Expired
     }
 }
 
