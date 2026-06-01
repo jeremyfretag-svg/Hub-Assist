@@ -81,4 +81,11 @@ export class EmailService {
       message: `Your booking for ${bookingDetails.workspaceName} was cancelled because the workspace is no longer available.`,
     });
   }
+
+  async sendAttendanceAutoCompleted(email: string, details: any): Promise<void> {
+    if (!details) throw new InternalServerErrorException('Missing required variable: details');
+    await this.sendTemplate(email, 'Your Clock-Out Session Was Auto-Completed', 'welcome', {
+      message: `Your clock-in session that started at ${details.clockInTime.toISOString()} was automatically closed at ${details.clockOutTime.toISOString()} after ${details.maxSessionHours} hours of inactivity.`,
+    });
+  }
 }
