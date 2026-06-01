@@ -7,7 +7,7 @@ mod test;
 
 pub(crate) use errors::ContractError;
 pub(crate) use types::{
-    Booking, BookingStatus, UnavailabilityReason, Workspace, WorkspaceAvailability, WorkspaceType,
+    Booking, BookingStatus, TierDiscounts, UnavailabilityReason, Workspace, WorkspaceAvailability, WorkspaceType,
 };
 
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, vec, Address, BytesN, Env, String, Vec};
@@ -18,12 +18,14 @@ const LEDGER_TTL: u32 = 535_680; // ~1 year
 enum DataKey {
     Admin,
     PaymentToken,
+    MembershipContract,
     WorkspaceCount,
     Workspace(u32),
     BookingCount,
     Booking(u64),
     MemberBookings(Address),
     WorkspaceBookings(u32),
+    TierDiscounts,
 }
 
 #[contract]
@@ -31,11 +33,21 @@ pub struct WorkspaceBooking;
 
 #[contractimpl]
 impl WorkspaceBooking {
-    pub fn initialize(env: Env, admin: Address, payment_token: Address) {
+    pub fn initialize(env: Env, admin: Address, payment_token: Address, membership_contract: Address) {
         admin.require_auth();
         let storage = env.storage().persistent();
         storage.set(&DataKey::Admin, &admin);
         storage.set(&DataKey::PaymentToken, &payment_token);
+        storage.set(&DataKey::MembershipContract, &membership_contract);
+        
+        // Initialize default tier discounts: Guest=0%, Member=5%, Gold=10%, Platinum=15%
+        let tier_discounts = TierDiscounts {
+            guest: 0,
+            member: 500,
+            gold: 1000,
+            platinum: 1500,
+        };
+        storage.set(&DataKey::TierDiscounts, &tier_discounts);
     }
 
     pub fn register_workspace(
@@ -129,6 +141,34 @@ impl WorkspaceBooking {
             }
         }
 
+        // Apply tier-based discount via cross-contract call
+        let mut applied_discount_bps: u32 = 0;
+        let membership_contract: Address = storage
+            .get(&DataKey::MembershipContract)
+            .ok_or(ContractError::PaymentTokenNotSet)?;
+        
+        // Try to get member's token status; if fails, proceed at full price
+        let tier_discounts: TierDiscounts = storage
+            .get(&DataKey::TierDiscounts)
+            .unwrap_or(TierDiscounts {
+                guest: 0,
+                member: 500,
+                gold: 1000,
+                platinum: 1500,
+            });
+
+        // Attempt cross-contract call to get token status
+        // If it fails, we proceed at full price (no panic)
+        if let Ok(token_status) = Self::get_member_token_status(&env, &membership_contract, &member) {
+            applied_discount_bps = match token_status {
+                0 => tier_discounts.guest,      // Guest
+                1 => tier_discounts.member,     // Member
+                2 => tier_discounts.gold,       // Gold
+                3 => tier_discounts.platinum,   // Platinum
+                _ => 0,
+            };
+        }
+
         let id: u64 = storage.get(&DataKey::BookingCount).unwrap_or(0) + 1;
         let booking = Booking {
             id,
@@ -139,7 +179,7 @@ impl WorkspaceBooking {
             amount,
             status: BookingStatus::Pending,
             stellar_tx_hash,
-            applied_discount_bps: 0,
+            applied_discount_bps,
         };
 
         storage.set(&DataKey::Booking(id), &booking);
@@ -261,5 +301,52 @@ impl WorkspaceBooking {
             panic!("unauthorized");
         }
         admin
+    }
+
+    fn get_member_token_status(env: &Env, membership_contract: &Address, member: &Address) -> Result<u32, ContractError> {
+        use soroban_sdk::IntoVal;
+        
+        // Cross-contract call to membership_token.get_token_status(member)
+        // Returns MembershipStatus enum as u32: Active=0, Expired=1, Revoked=2, GracePeriod=3
+        let result: Result<u32, _> = env.invoke_contract(
+            membership_contract,
+            &symbol_short!("get_tier"),
+            soroban_sdk::vec![env, member.clone().into_val(env)],
+        );
+        
+        result.map_err(|_| ContractError::PaymentTokenNotSet)
+    }
+
+    pub fn get_tier_discounts(env: Env) -> TierDiscounts {
+        env.storage()
+            .persistent()
+            .get(&DataKey::TierDiscounts)
+            .unwrap_or(TierDiscounts {
+                guest: 0,
+                member: 500,
+                gold: 1000,
+                platinum: 1500,
+            })
+    }
+
+    pub fn update_tier_discounts(
+        env: Env,
+        caller: Address,
+        guest: u32,
+        member: u32,
+        gold: u32,
+        platinum: u32,
+    ) -> Result<(), ContractError> {
+        Self::require_admin(&env, &caller);
+        let tier_discounts = TierDiscounts {
+            guest,
+            member,
+            gold,
+            platinum,
+        };
+        env.storage()
+            .persistent()
+            .set(&DataKey::TierDiscounts, &tier_discounts);
+        Ok(())
     }
 }

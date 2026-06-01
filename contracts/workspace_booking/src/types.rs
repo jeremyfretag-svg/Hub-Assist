@@ -1,6 +1,15 @@
 use soroban_sdk::{contracttype, Address, BytesN, String};
 
 #[contracttype]
+#[derive(Clone)]
+pub struct TierDiscounts {
+    pub guest: u32,      // 0% (0 bps)
+    pub member: u32,     // 5% (500 bps)
+    pub gold: u32,       // 10% (1000 bps)
+    pub platinum: u32,   // 15% (1500 bps)
+}
+
+#[contracttype]
 #[derive(Clone, PartialEq)]
 pub enum WorkspaceType {
     HotDesk,
