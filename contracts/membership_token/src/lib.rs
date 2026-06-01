@@ -41,6 +41,7 @@ pub enum DataKey {
     TokenCount,
     Token(u64),
     Admin,
+    GracePeriodDays,
 }
 
 #[contracttype]
@@ -66,6 +67,7 @@ impl MembershipTokenContract {
     pub fn initialize(env: Env, admin: Address) {
         admin.require_auth();
         env.storage().instance().set(&DataKey::Admin, &admin);
+        env.storage().instance().set(&DataKey::GracePeriodDays, &30u64);
     }
 
     // ── single ops ──────────────────────────────────────────────────────────
@@ -145,6 +147,25 @@ impl MembershipTokenContract {
 
     pub fn get_token(env: Env, id: u64) -> Result<MembershipToken, ContractError> {
         Self::load_token(&env, id)
+    }
+
+    pub fn get_grace_period_days(env: Env) -> u64 {
+        env.storage()
+            .instance()
+            .get(&DataKey::GracePeriodDays)
+            .unwrap_or(30u64)
+    }
+
+    pub fn update_grace_period_days(
+        env: Env,
+        admin: Address,
+        grace_period_days: u64,
+    ) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin)?;
+        env.storage()
+            .instance()
+            .set(&DataKey::GracePeriodDays, &grace_period_days);
+        Ok(())
     }
 
     // ── batch ops ────────────────────────────────────────────────────────────
@@ -247,15 +268,27 @@ impl MembershipTokenContract {
         if token.status == MembershipStatus::Revoked {
             return MembershipStatus::Revoked;
         }
-        if token.status == MembershipStatus::GracePeriod {
+        
+        let now = env.ledger().timestamp();
+        let grace_period_days: u64 = env
+            .storage()
+            .instance()
+            .get(&DataKey::GracePeriodDays)
+            .unwrap_or(30u64);
+        let grace_period_secs = grace_period_days * 86_400;
+        
+        // Active if not yet expired
+        if now <= token.expiry_date {
+            return MembershipStatus::Active;
+        }
+        
+        // GracePeriod if within grace window
+        if now <= token.expiry_date + grace_period_secs {
             return MembershipStatus::GracePeriod;
         }
-        let now = env.ledger().timestamp();
-        if now > token.expiry_date {
-            MembershipStatus::Expired
-        } else {
-            MembershipStatus::Active
-        }
+        
+        // Expired if beyond grace period
+        MembershipStatus::Expired
     }
 }
 
