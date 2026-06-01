@@ -159,3 +159,12 @@ pub struct Subscription {
     pub paused_at: u64,
     pub pause_reason: String,
 }
+
+#[contracttype]
+#[derive(Clone)]
+pub struct AttendanceEntry {
+    pub user: soroban_sdk::Address,
+    pub clock_in: u64,
+    pub clock_out: u64,
+    pub prev_hash: soroban_sdk::BytesN<32>,
+}
