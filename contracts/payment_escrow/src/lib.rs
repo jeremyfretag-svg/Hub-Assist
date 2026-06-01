@@ -342,6 +342,40 @@ impl PaymentEscrow {
         Ok(())
     }
 
+    /// Auto-release funds to beneficiary after release_time. Permissionless.
+    /// Caller receives no funds; only beneficiary receives the escrowed amount.
+    pub fn try_auto_release(env: Env, caller: Address, escrow_id: u64) -> Result<(), ContractError> {
+        caller.require_auth();
+        let s = env.storage().persistent();
+        let mut escrow: Escrow = s.get(&DataKey::Escrow(escrow_id)).ok_or(ContractError::EscrowNotFound)?;
+
+        // Validate escrow is Active (not Disputed/Released/Refunded)
+        if escrow.status != EscrowStatus::Active {
+            return Err(ContractError::AlreadyProcessed);
+        }
+
+        // Validate release_time has passed
+        let now = env.ledger().timestamp();
+        if now < escrow.release_time {
+            return Err(ContractError::NotYetReleasable);
+        }
+
+        // Transfer funds to beneficiary
+        token::Client::new(&env, &escrow.payment_token).transfer(
+            &env.current_contract_address(),
+            &escrow.beneficiary,
+            &escrow.amount,
+        );
+
+        escrow.status = EscrowStatus::Released;
+        s.set(&DataKey::Escrow(escrow_id), &escrow);
+        s.extend_ttl(&DataKey::Escrow(escrow_id), LEDGER_TTL, LEDGER_TTL);
+
+        env.events().publish((symbol_short!("auto_rel"), caller), escrow_id);
+        Ok(())
+    }
+    }
+
     pub fn get_escrow(env: Env, id: u64) -> Result<Escrow, ContractError> {
         env.storage()
             .persistent()
