@@ -102,12 +102,35 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  @Get('csrf-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Get CSRF token for state-mutating requests' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        csrfToken: { type: 'string', description: 'CSRF token to include in X-CSRF-Token header' },
+      },
+    },
+  })
+  async getCsrfToken(@Req() req: any) {
+    const csrfToken = await this.csrfService.generateToken(req.user.jti);
+    return { csrfToken };
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Logout user — immediately revokes the current access token' })
   @ApiResponse({ status: 200, description: 'Logout successful' })
-  logout(@Req() req: any) {
+  async logout(@Req() req: any) {
+    // Invalidate CSRF token on logout
+    if (req.user?.jti) {
+      await this.csrfService.invalidateToken(req.user.jti);
+    }
     // req.user is populated by JwtStrategy.validate()
     // Pass jti + exp so the access token is blacklisted in Redis immediately.
     return this.authService.logout(req.user.id, req.user.jti, req.user.exp);
