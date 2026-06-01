@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Req, Get } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { CsrfService } from './csrf.service';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -19,7 +20,10 @@ import { ResetPasswordDto } from './dto/reset-password.dto';
 @ApiTags('auth')
 @Controller({ version: '1', path: 'auth' })
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly csrfService: CsrfService,
+  ) {}
 
   @Post('register')
   @Public()
@@ -96,12 +100,35 @@ export class AuthController {
     return this.authService.refresh(dto.refreshToken);
   }
 
+  @Get('csrf-token')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Get CSRF token for state-mutating requests' })
+  @ApiResponse({
+    status: 200,
+    description: 'CSRF token generated successfully',
+    schema: {
+      type: 'object',
+      properties: {
+        csrfToken: { type: 'string', description: 'CSRF token to include in X-CSRF-Token header' },
+      },
+    },
+  })
+  async getCsrfToken(@Req() req: any) {
+    const csrfToken = await this.csrfService.generateToken(req.user.jti);
+    return { csrfToken };
+  }
+
   @Post('logout')
   @UseGuards(JwtAuthGuard)
   @ApiBearerAuth('bearer')
   @ApiOperation({ summary: 'Logout user — immediately revokes the current access token' })
   @ApiResponse({ status: 200, description: 'Logout successful' })
-  logout(@Req() req: any) {
+  async logout(@Req() req: any) {
+    // Invalidate CSRF token on logout
+    if (req.user?.jti) {
+      await this.csrfService.invalidateToken(req.user.jti);
+    }
     // req.user is populated by JwtStrategy.validate()
     // Pass jti + exp so the access token is blacklisted in Redis immediately.
     return this.authService.logout(req.user.id, req.user.jti, req.user.exp);

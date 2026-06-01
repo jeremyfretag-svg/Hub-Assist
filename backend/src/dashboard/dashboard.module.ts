@@ -5,9 +5,10 @@ import { Booking } from '../bookings/booking.entity';
 import { Workspace } from '../workspaces/workspace.entity';
 import { DashboardService } from './dashboard.service';
 import { DashboardController } from './dashboard.controller';
+import { CacheModule } from '../common/cache/cache.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([User, Booking, Workspace])],
+  imports: [TypeOrmModule.forFeature([User, Booking, Workspace]), CacheModule],
   providers: [DashboardService],
   controllers: [DashboardController],
 })
