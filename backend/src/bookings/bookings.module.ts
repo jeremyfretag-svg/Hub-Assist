@@ -4,6 +4,7 @@ import { Booking } from './booking.entity';
 import { CancellationPolicy } from './cancellation-policy.entity';
 import { BookingsService } from './bookings.service';
 import { ConflictDetectionService } from './conflict-detection.service';
+import { CapacityCheckService } from './capacity-check.service';
 import { RecurrenceService } from './recurrence.service';
 import { CancellationPolicyService } from './cancellation-policy.service';
 import { BookingsController } from './bookings.controller';
@@ -27,11 +28,12 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
   providers: [
     BookingsService,
     ConflictDetectionService,
+    CapacityCheckService,
     RecurrenceService,
     CancellationPolicyService,
     RolesGuard,
   ],
   controllers: [BookingsController],
-  exports: [BookingsService, CancellationPolicyService],
+  exports: [BookingsService, CancellationPolicyService, CapacityCheckService],
 })
 export class BookingsModule {}
