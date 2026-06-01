@@ -41,6 +41,7 @@ pub enum DataKey {
     TokenCount,
     Token(u64),
     Admin,
+    ExpiryIndex(u64),
 }
 
 #[contracttype]
@@ -91,6 +92,19 @@ impl MembershipTokenContract {
             status: MembershipStatus::Active,
         };
         Self::save_token(&env, &token);
+        
+        // Add to expiry index
+        let expiry_day = expiry_date / 86400; // Convert to days since epoch
+        let mut tokens_on_day: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ExpiryIndex(expiry_day))
+            .unwrap_or(Vec::new(&env));
+        tokens_on_day.push_back(id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ExpiryIndex(expiry_day), &tokens_on_day);
+        
         env.events().publish((symbol_short!("issue"), owner), id);
         Ok(id)
     }
@@ -122,6 +136,38 @@ impl MembershipTokenContract {
         if token.status == MembershipStatus::Revoked {
             return Err(ContractError::TokenRevoked);
         }
+        
+        // Remove from old expiry bucket
+        let old_expiry_day = token.expiry_date / 86400;
+        if let Some(mut tokens_on_day) = env
+            .storage()
+            .persistent()
+            .get::<DataKey, Vec<u64>>(&DataKey::ExpiryIndex(old_expiry_day))
+        {
+            tokens_on_day.retain(|&token_id| token_id != id);
+            if tokens_on_day.len() > 0 {
+                env.storage()
+                    .persistent()
+                    .set(&DataKey::ExpiryIndex(old_expiry_day), &tokens_on_day);
+            } else {
+                env.storage()
+                    .persistent()
+                    .remove(&DataKey::ExpiryIndex(old_expiry_day));
+            }
+        }
+        
+        // Add to new expiry bucket
+        let new_expiry_day = new_expiry_date / 86400;
+        let mut tokens_on_day: Vec<u64> = env
+            .storage()
+            .persistent()
+            .get(&DataKey::ExpiryIndex(new_expiry_day))
+            .unwrap_or(Vec::new(&env));
+        tokens_on_day.push_back(id);
+        env.storage()
+            .persistent()
+            .set(&DataKey::ExpiryIndex(new_expiry_day), &tokens_on_day);
+        
         token.expiry_date = new_expiry_date;
         token.status = MembershipStatus::Active;
         Self::save_token(&env, &token);
@@ -145,6 +191,32 @@ impl MembershipTokenContract {
 
     pub fn get_token(env: Env, id: u64) -> Result<MembershipToken, ContractError> {
         Self::load_token(&env, id)
+    }
+
+    pub fn get_expiring_tokens(env: Env, days_ahead: u64) -> Vec<u64> {
+        // Cap days_ahead at 365 to prevent excessive iteration
+        let days_ahead = if days_ahead > 365 { 365 } else { days_ahead };
+        
+        let now = env.ledger().timestamp();
+        let today = now / 86400;
+        let end_day = today + days_ahead;
+        
+        let mut expiring_ids = Vec::new(&env);
+        
+        // Iterate through expiry index for each day in the window
+        for day in today..=end_day {
+            if let Some(tokens_on_day) = env
+                .storage()
+                .persistent()
+                .get::<DataKey, Vec<u64>>(&DataKey::ExpiryIndex(day))
+            {
+                for token_id in tokens_on_day.iter() {
+                    expiring_ids.push_back(token_id);
+                }
+            }
+        }
+        
+        expiring_ids
     }
 
     // ── batch ops ────────────────────────────────────────────────────────────
@@ -174,6 +246,19 @@ impl MembershipTokenContract {
                 status: MembershipStatus::Active,
             };
             Self::save_token(&env, &token);
+            
+            // Add to expiry index
+            let expiry_day = p.expiry_date / 86400;
+            let mut tokens_on_day: Vec<u64> = env
+                .storage()
+                .persistent()
+                .get(&DataKey::ExpiryIndex(expiry_day))
+                .unwrap_or(Vec::new(&env));
+            tokens_on_day.push_back(id);
+            env.storage()
+                .persistent()
+                .set(&DataKey::ExpiryIndex(expiry_day), &tokens_on_day);
+            
             env.events().publish((symbol_short!("issue"), p.owner), id);
             ids.push_back(id);
         }
