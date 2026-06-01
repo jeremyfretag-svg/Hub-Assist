@@ -7,7 +7,7 @@ mod test;
 
 pub(crate) use errors::ContractError;
 pub(crate) use types::{
-    Booking, BookingStatus, UnavailabilityReason, Workspace, WorkspaceAvailability, WorkspaceType,
+    Booking, BookingStatus, UnavailabilityReason, Workspace, WorkspaceAvailability, WorkspaceType, WorkspaceState,
 };
 
 use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, vec, Address, BytesN, Env, String, Vec};
@@ -55,6 +55,7 @@ impl WorkspaceBooking {
             capacity,
             price_per_hour,
             availability: WorkspaceAvailability::Available,
+            state: WorkspaceState::Available,
         };
         storage.set(&DataKey::Workspace(id), &workspace);
         storage.extend_ttl(&DataKey::Workspace(id), LEDGER_TTL, LEDGER_TTL);
@@ -99,6 +100,13 @@ impl WorkspaceBooking {
         let workspace: Workspace = storage
             .get(&DataKey::Workspace(workspace_id))
             .ok_or(ContractError::WorkspaceNotFound)?;
+
+        // Check state machine: block bookings for Unavailable or Maintenance states
+        match &workspace.state {
+            WorkspaceState::Available => {},
+            WorkspaceState::Unavailable { .. } => return Err(ContractError::WorkspaceUnavailable),
+            WorkspaceState::Maintenance { .. } => return Err(ContractError::WorkspaceUnavailable),
+        }
 
         if workspace.availability != WorkspaceAvailability::Available {
             return Err(ContractError::WorkspaceUnavailable);
@@ -231,6 +239,50 @@ impl WorkspaceBooking {
             }
         }
         result
+    }
+
+    pub fn transition_workspace_state(
+        env: Env,
+        admin: Address,
+        workspace_id: u32,
+        new_state: WorkspaceState,
+    ) -> Result<(), ContractError> {
+        Self::require_admin(&env, &admin);
+        let storage = env.storage().persistent();
+        let mut workspace: Workspace = storage
+            .get(&DataKey::Workspace(workspace_id))
+            .ok_or(ContractError::WorkspaceNotFound)?;
+
+        let old_state = workspace.state.clone();
+
+        // Validate state transitions
+        match (&old_state, &new_state) {
+            // Available can transition to Unavailable or Maintenance
+            (WorkspaceState::Available, WorkspaceState::Unavailable { .. }) => {},
+            (WorkspaceState::Available, WorkspaceState::Maintenance { .. }) => {},
+            // Unavailable can transition to Available
+            (WorkspaceState::Unavailable { .. }, WorkspaceState::Available) => {},
+            // Maintenance can only transition to Available if scheduled_return has passed
+            (WorkspaceState::Maintenance { scheduled_return }, WorkspaceState::Available) => {
+                if env.ledger().timestamp() < *scheduled_return {
+                    panic!("MaintenanceNotComplete");
+                }
+            },
+            // Maintenance can transition to Unavailable
+            (WorkspaceState::Maintenance { .. }, WorkspaceState::Unavailable { .. }) => {},
+            // Same state is a no-op
+            _ if old_state == new_state => return Ok(()),
+            // All other transitions are invalid
+            _ => panic!("InvalidStateTransition"),
+        }
+
+        workspace.state = new_state.clone();
+        storage.set(&DataKey::Workspace(workspace_id), &workspace);
+        storage.extend_ttl(&DataKey::Workspace(workspace_id), LEDGER_TTL, LEDGER_TTL);
+
+        // Emit state change event
+        env.events().publish((symbol_short!("state_chg"), workspace_id), (old_state, new_state));
+        Ok(())
     }
 
     // --- helpers ---
