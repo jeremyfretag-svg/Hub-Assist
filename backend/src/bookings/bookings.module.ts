@@ -14,6 +14,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 import { PricingModule } from '../pricing/pricing.module';
 import { OutboxModule } from '../outbox/outbox.module';
 import { WebhooksModule } from '../webhooks/webhooks.module';
+import { CacheModule } from '../common/cache/cache.module';
 
 @Module({
   imports: [
@@ -23,6 +24,7 @@ import { WebhooksModule } from '../webhooks/webhooks.module';
     PricingModule,
     OutboxModule,
     WebhooksModule,
+    CacheModule,
   ],
   providers: [
     BookingsService,
