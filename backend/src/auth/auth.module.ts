@@ -15,6 +15,7 @@ import { EmailService } from './email.service';
 import { RefreshToken } from './refresh-token.entity';
 import { WebAuthnCredential } from './webauthn-credential.entity';
 import { RefreshTokenRepository } from './refresh-token.repository';
+import { SessionBroadcastService } from './session-broadcast.service';
 import { ForgotPasswordProvider } from '../users/providers/forgot-password.provider';
 import { ResetPasswordProvider } from '../users/providers/reset-password.provider';
 import { User } from '../users/user.entity';
@@ -47,11 +48,12 @@ import { PasswordPolicyModule } from './password-policy/password-policy.module';
     JwtStrategy,
     EmailService,
     RefreshTokenRepository,
+    SessionBroadcastService,
     ForgotPasswordProvider,
     ResetPasswordProvider,
     OtpRateLimitService,
   ],
   controllers: [AuthController, BiometricController, TotpController],
-  exports: [TotpService],
+  exports: [TotpService, SessionBroadcastService],
 })
 export class AuthModule {}

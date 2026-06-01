@@ -1,4 +1,4 @@
-import { Body, Controller, Post, UseGuards, Req } from '@nestjs/common';
+import { Body, Controller, Post, UseGuards, Req, Get, Sse } from '@nestjs/common';
 import {
   ApiTags,
   ApiOperation,
@@ -8,6 +8,7 @@ import {
 } from '@nestjs/swagger';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
+import { SessionBroadcastService } from './session-broadcast.service';
 import { Public } from '../common/decorators/public.decorator';
 import { JwtAuthGuard } from './jwt-auth.guard';
 import { VerifyOtpDto } from './dto/verify-otp.dto';
@@ -15,11 +16,16 @@ import { ResendOtpDto } from './dto/resend-otp.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
+import { Observable, interval } from 'rxjs';
+import { map } from 'rxjs/operators';
 
 @ApiTags('auth')
 @Controller({ version: '1', path: 'auth' })
 export class AuthController {
-  constructor(private readonly authService: AuthService) {}
+  constructor(
+    private readonly authService: AuthService,
+    private readonly sessionBroadcastService: SessionBroadcastService,
+  ) {}
 
   @Post('register')
   @Public()
@@ -105,6 +111,54 @@ export class AuthController {
     // req.user is populated by JwtStrategy.validate()
     // Pass jti + exp so the access token is blacklisted in Redis immediately.
     return this.authService.logout(req.user.id, req.user.jti, req.user.exp);
+  }
+
+  @Post('logout-all')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Logout from all devices — revokes all refresh tokens and broadcasts session termination' })
+  @ApiResponse({ status: 200, description: 'Logged out from all devices' })
+  async logoutAll(@Req() req: any) {
+    const result = await this.authService.logoutAll(req.user.id, req.user.jti, req.user.exp);
+    // Broadcast session revocation to all connected SSE clients
+    this.sessionBroadcastService.broadcastSessionRevocation(req.user.id);
+    return result;
+  }
+
+  @Get('session-events')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('bearer')
+  @ApiOperation({ summary: 'Server-Sent Events stream for session termination notifications' })
+  @ApiResponse({ status: 200, description: 'SSE stream established' })
+  @Sse()
+  sessionEvents(@Req() req: any): Observable<any> {
+    const userId = req.user.id;
+    const eventStream = this.sessionBroadcastService.getSessionEventStream(userId);
+
+    // Emit heartbeat every 30 seconds to keep connection alive
+    const heartbeat$ = interval(30000).pipe(
+      map(() => ({ data: { type: 'heartbeat', timestamp: new Date() } })),
+    );
+
+    // Merge event stream with heartbeat
+    return new Observable((subscriber) => {
+      const eventSub = eventStream.subscribe({
+        next: (event) => subscriber.next({ data: event }),
+        error: (err) => subscriber.error(err),
+        complete: () => subscriber.complete(),
+      });
+
+      const heartbeatSub = heartbeat$.subscribe({
+        next: (hb) => subscriber.next(hb),
+        error: (err) => subscriber.error(err),
+      });
+
+      return () => {
+        eventSub.unsubscribe();
+        heartbeatSub.unsubscribe();
+        this.sessionBroadcastService.cleanupSessionStream(userId);
+      };
+    });
   }
 
   @Post('forgot-password')
