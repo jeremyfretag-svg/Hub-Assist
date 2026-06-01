@@ -1,9 +1,11 @@
-import { Controller, Get, UseInterceptors } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, UseInterceptors, Query } from '@nestjs/common';
+import { ApiTags, ApiOperation, ApiBearerAuth, ApiResponse, ApiQuery } from '@nestjs/swagger';
 import { CacheInterceptor, CacheKey, CacheTTL } from '@nestjs/cache-manager';
 import { Roles } from '../common/decorators/roles.decorator';
-import { UserRole } from '../users/user.entity';
-import { DashboardService } from './dashboard.service';
+import { GetCurrentUser } from '../common/decorators/get-current-user.decorator';
+import { UserRole, User } from '../users/user.entity';
+import { DashboardService, ActivityFeedQuery } from './dashboard.service';
+import { EventCategory } from '../audit/audit-log.entity';
 
 @ApiTags('dashboard')
 @ApiBearerAuth('bearer')
@@ -22,10 +24,30 @@ export class DashboardController {
   }
 
   @Get('activity')
-  @ApiOperation({ summary: 'Get recent activity' })
-  @ApiResponse({ status: 200, description: 'Activity retrieved successfully' })
-  getActivity() {
-    return this.service.getActivity();
+  @ApiOperation({ summary: 'Get activity feed with optional filtering' })
+  @ApiQuery({ name: 'eventCategory', enum: EventCategory, required: false })
+  @ApiQuery({ name: 'actorId', type: String, required: false })
+  @ApiQuery({ name: 'resourceId', type: String, required: false })
+  @ApiQuery({ name: 'cursor', type: String, required: false })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  @ApiResponse({ status: 200, description: 'Activity feed retrieved successfully' })
+  async getActivity(
+    @Query('eventCategory') eventCategory?: EventCategory,
+    @Query('actorId') actorId?: string,
+    @Query('resourceId') resourceId?: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit?: string,
+    @GetCurrentUser() user?: User,
+  ) {
+    const query: ActivityFeedQuery = {
+      eventCategory,
+      actorId,
+      resourceId,
+      cursor,
+      limit: limit ? Math.min(parseInt(limit, 10), 50) : 20,
+    };
+
+    return this.service.getActivity(query, user?.id, user?.role);
   }
 
   @Get('growth')
